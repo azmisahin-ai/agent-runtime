@@ -2,53 +2,79 @@
 
 Model-agnostic coding Agent Runtime / Harness.
 
-The runtime owns continuity: task state, persistence, context, memory, tools, verification, recovery, and evaluation. Models and external agents are execution backends, not system authorities.
+> **The model is not the agent. The agent is not the runtime. The runtime owns continuity.**
+
+## Repository handoff map
+
+| Need | File |
+|---|---|
+| Start working | `AGENTS.md` |
+| Current state | `STATUS.md` |
+| Architecture | `docs/specifications/01_ARCHITECTURE_MATRIX.md` through `17_OBSERVABILITY_TELEMETRY_AUDIT_SPEC.md` |
+| Implementation order | `docs/roadmap/18_IMPLEMENTATION_DELIVERY_ROADMAP.md` |
+| Requirement proof | `docs/TRACEABILITY_MATRIX.md` |
+| Project intent | `docs/PROJECT_CHARTER.md` |
+| Current code | `src/` |
+| Tests | `tests/` |
+| Database | `migrations/` |
+
+## Architecture
+
+```text
+USER
+ ↓
+UI / CLI / API
+ ↓
+AGENT RUNTIME
+ ├─ Task / Attempt / State
+ ├─ Context
+ ├─ Memory
+ ├─ Repository Intelligence
+ ├─ Tools + Policy
+ ├─ Backend Adapters
+ ├─ Verification
+ ├─ Recovery
+ ├─ Persistence / Events
+ ├─ Observability
+ └─ Evaluation
+ ↓
+MODEL / AGENT BACKENDS
+```
+
+The model is never the authority for state, security, tool execution or success.
 
 ## Current status
 
-**M0 Foundation — implementation in progress.**
-
-Implemented in this repository:
-
-- TypeScript/Node.js project foundation
-- SQLite schema and migration
-- Project/Task/Attempt domain model
-- Task state machine with terminal-state protection
-- Append-only event store
-- Project and Task repositories
-- Configuration loader with validated defaults
-- Unit tests for core lifecycle and persistence contracts
-
-M1 is the next milestone: Ollama backend, baseline Context Engine, read/search tools, verification, checkpoint/resume, and the first end-to-end vertical slice.
+M0 Foundation is implemented. M1 is next. This repository intentionally distinguishes **specified**, **implemented**, **verified** and **planned** work.
 
 ## Requirements
 
 - Node.js >= 22.5
 - npm
 
-Node 22's built-in `node:sqlite` is used for the M0 persistence layer.
-
-## Commands
+## Verify
 
 ```bash
 npm install
 npm run check
-npm run build
-npm test
 ```
 
-## Architecture
+## How a new coding agent should continue
 
 ```text
-UI / API
-   |
-Application Services
-   |
-Runtime / Domain
-   |
-Persistence + Events + Config
-   |
-Backends / Tools / Repository / Verification
+AGENTS.md
+  ↓
+STATUS.md
+  ↓
+TRACEABILITY_MATRIX.md
+  ↓
+relevant specification 01–17
+  ↓
+roadmap 18
+  ↓
+source + tests
+  ↓
+implement next milestone
 ```
 
-The model is never the authority for task state, security policy, tool execution, or success.
+Do not start a new architecture-planning loop unless an explicit architecture change is requested.
