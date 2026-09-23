@@ -20,6 +20,8 @@ Implement Task Engine integration, checkpointing, baseline context, Ollama backe
 
 Implement durable memory, context snapshots/compaction, complete Tool Engine, Git read tools, terminal execution, verification/recovery semantics, configuration snapshots and observability hardening. Network remains DENY by default.
 
+**Current repository:** M2 is implemented and verified. Delivered: durable Memory Engine (persistence gate, provenance, supersession, conflict detection, flush, revalidation, project isolation), context compaction (dedup, priority preservation, flush-before-compact), the complete Tool Engine (`write_file`, `terminal.exec` — structured argv, deny-by-default, command allowlist, timeout, output bounds, secret redaction), resume configuration reconciliation (execution-sensitive drift forces PAUSE and a new Attempt), repository intelligence (file/symbol index, freshness, immutable evidence), and an observability layer (correlated structured logs, secret-redacted, plus metrics). Network and process execution remain DENY by default and widen only via explicit flags. See `STATUS.md` and `docs/TRACEABILITY_MATRIX.md`.
+
 ## M3 — Intelligence Layer
 
 Repository symbols/dependency graph, affected scope analysis, Git intelligence, memory ranking/reconciliation, richer context retrieval and repository evidence freshness.

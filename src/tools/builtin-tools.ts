@@ -1,6 +1,8 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import type { ToolDefinition, PermissionLevel } from '../domain/types.js';
+import { redactSecrets } from '../security/secret-redaction.js';
 import { resolveWorkspacePath, type PathGuardOptions } from './path-guard.js';
 
 export interface ToolExecutionContext {
@@ -8,6 +10,8 @@ export interface ToolExecutionContext {
   pathGuard: PathGuardOptions;
   maxOutputBytes: number;
   gitRunner?: (args: string[]) => string;
+  authorizeCommand?: (argv: string[]) => { allowed: boolean; reason: string };
+  commandTimeoutMs?: number;
 }
 
 export interface ToolImplementation {
@@ -17,6 +21,8 @@ export interface ToolImplementation {
 
 const READ_ONLY: PermissionLevel = 'READ_ONLY';
 const GIT_READ: PermissionLevel = 'READ_ONLY';
+const WORKSPACE_WRITE: PermissionLevel = 'WORKSPACE_WRITE';
+const PROCESS_EXEC: PermissionLevel = 'PROCESS_EXECUTION';
 
 export const MAX_DEFAULT_OUTPUT = 262_144;
 
@@ -119,6 +125,73 @@ function searchFilesTool(): ToolImplementation {
   };
 }
 
+function writeFileTool(): ToolImplementation {
+  return {
+    definition: {
+      name: 'write_file', version: '1.0.0',
+      description: 'Write UTF-8 content to a file inside the workspace root.',
+      capabilities: ['filesystem_write'], permission: WORKSPACE_WRITE,
+      inputSchema: {
+        type: 'object', additionalProperties: false, required: ['path', 'content'],
+        properties: {
+          path: { type: 'string', minLength: 1, maxLength: 4096 },
+          content: { type: 'string', maxLength: MAX_DEFAULT_OUTPUT },
+          createDirectories: { type: 'boolean' }
+        }
+      },
+      limits: { maxBytes: MAX_DEFAULT_OUTPUT }
+    },
+    execute(args, context) {
+      // Path guard runs before any write; the guard also blocks sensitive paths.
+      const target = resolveWorkspacePath(context.pathGuard, String(args.path));
+      const content = String(args.content ?? '');
+      if (content.length > (context.maxOutputBytes || MAX_DEFAULT_OUTPUT)) {
+        throw new Error(`write content exceeds limit: ${content.length} bytes`);
+      }
+      if (args.createDirectories === true) mkdirSync(dirname(target.absolutePath), { recursive: true });
+      writeFileSync(target.absolutePath, content, 'utf8');
+      const relativePath = relative(context.workspaceRoot, target.absolutePath).split(sep).join('/');
+      return JSON.stringify({ path: relativePath, bytes: Buffer.byteLength(content, 'utf8') });
+    }
+  };
+}
+
+// Terminal execution: structured argv only (no shell string), explicit timeout,
+// bounded output, per-command authorization and secret redaction (spec 10 §6, §9).
+function terminalExecTool(): ToolImplementation {
+  return {
+    definition: {
+      name: 'terminal.exec', version: '1.0.0',
+      description: 'Execute a structured command (argv form) inside the workspace root.',
+      capabilities: ['process_execute'], permission: PROCESS_EXEC,
+      inputSchema: {
+        type: 'object', additionalProperties: false, required: ['argv'],
+        properties: {
+          argv: { type: 'array', minItems: 1, maxItems: 64, items: { type: 'string', minLength: 1, maxLength: 4096 } },
+          cwd: { type: 'string', maxLength: 4096 }
+        }
+      },
+      limits: { maxBytes: MAX_DEFAULT_OUTPUT, timeoutMs: 30_000 }
+    },
+    execute(args, context) {
+      const argv = (args.argv as string[]).map(String);
+      // Structured argv means the first element is the program, never a shell.
+      const decision = context.authorizeCommand?.(argv) ?? { allowed: false, reason: 'no command authorizer configured' };
+      if (!decision.allowed) throw new Error(`command denied: ${decision.reason}`);
+      const cwd = args.cwd ? resolveWorkspacePath(context.pathGuard, String(args.cwd)).absolutePath : context.workspaceRoot;
+      const timeout = context.commandTimeoutMs ?? 30_000;
+      const result = spawnSync(argv[0], argv.slice(1), {
+        cwd, timeout, encoding: 'utf8', shell: false,
+        maxBuffer: context.maxOutputBytes || MAX_DEFAULT_OUTPUT,
+        env: { PATH: process.env.PATH ?? '', HOME: cwd, LANG: process.env.LANG ?? 'C' }
+      });
+      if (result.error) throw new Error(`command failed to start: ${result.error.message}`);
+      const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+      return JSON.stringify(redactSecrets(truncate(combined, context.maxOutputBytes || MAX_DEFAULT_OUTPUT).text));
+    }
+  };
+}
+
 function gitTool(name: 'git.status' | 'git.diff' | 'git.log' | 'git.branch'): ToolImplementation {
   const gitArgs: Record<string, string[]> = {
     'git.status': ['status', '--porcelain'],
@@ -140,5 +213,9 @@ function gitTool(name: 'git.status' | 'git.diff' | 'git.log' | 'git.branch'): To
 }
 
 export function builtinTools(): ToolImplementation[] {
-  return [readFileTool(), listDirectoryTool(), searchFilesTool(), gitTool('git.status'), gitTool('git.diff'), gitTool('git.log'), gitTool('git.branch')];
+  return [
+    readFileTool(), listDirectoryTool(), searchFilesTool(),
+    writeFileTool(), terminalExecTool(),
+    gitTool('git.status'), gitTool('git.diff'), gitTool('git.log'), gitTool('git.branch')
+  ];
 }

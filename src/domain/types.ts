@@ -220,3 +220,103 @@ export interface Evaluation {
   startedAt: string;
   endedAt: string;
 }
+
+// --- Memory (spec 03) ---
+
+export type MemoryType = 'WORKING' | 'EPISODIC' | 'SEMANTIC' | 'PROJECT' | 'PROCEDURAL' | 'FAILURE';
+export type MemoryScope = 'GLOBAL' | 'PROJECT' | 'TASK' | 'ATTEMPT' | 'SESSION';
+export type MemorySource = 'USER' | 'MODEL' | 'TOOL' | 'REPOSITORY' | 'GIT' | 'TEST' | 'SYSTEM' | 'DERIVED';
+export type MemoryConfidence = 'LOW' | 'MEDIUM' | 'HIGH';
+export type MemoryStatus = 'ACTIVE' | 'SUPERSEDED' | 'EXPIRED' | 'UNCERTAIN' | 'CONFLICTING' | 'ARCHIVED';
+export type MemoryRelationType = 'supports' | 'contradicts' | 'supersedes' | 'derived_from' | 'related_to';
+
+export interface MemoryRecord {
+  memoryId: string;
+  projectId: string;
+  scope: MemoryScope;
+  type: MemoryType;
+  content: string;
+  source: MemorySource;
+  createdAt: string;
+  updatedAt: string;
+  confidence: MemoryConfidence;
+  status: MemoryStatus;
+  validFrom: string;
+  validUntil: string | null;
+  supersedes: string | null;
+  supersededBy: string | null;
+  relatedTaskId: string | null;
+  relatedAttemptId: string | null;
+  relatedFiles: string[];
+  relatedSymbols: string[];
+}
+
+export interface MemoryEvidence {
+  memoryEvidenceId: string;
+  memoryId: string;
+  source: MemorySource;
+  reference: string;
+  contentHash: string;
+  revision: string | null;
+  createdAt: string;
+}
+
+export interface MemoryRelation {
+  memoryRelationId: string;
+  fromMemoryId: string;
+  toMemoryId: string;
+  relation: MemoryRelationType;
+  createdAt: string;
+}
+
+export interface MemoryCandidate {
+  projectId: string;
+  scope: MemoryScope;
+  type: MemoryType;
+  content: string;
+  source: MemorySource;
+  confidence: MemoryConfidence;
+  relatedTaskId?: string | null;
+  relatedAttemptId?: string | null;
+  relatedFiles?: string[];
+  relatedSymbols?: string[];
+  evidence?: { reference: string; contentHash: string; revision?: string | null }[];
+  supersedes?: string | null;
+}
+
+// --- Repository intelligence (spec 12) ---
+
+export type IndexState = 'FRESH' | 'STALE' | 'BUILDING' | 'FAILED' | 'UNKNOWN';
+
+export interface RepositoryFileRecord {
+  fileId: string;
+  projectId: string;
+  path: string;
+  language: string | null;
+  size: number;
+  contentHash: string;
+  revision: string | null;
+  indexedAt: string;
+}
+
+export interface RepositorySymbolRecord {
+  symbolId: string;
+  projectId: string;
+  fileId: string;
+  kind: string;
+  qualifiedName: string;
+  location: string;
+  signature: string | null;
+  contentHash: string;
+  indexedAt: string;
+}
+
+export interface RepositoryIndexStateRecord {
+  projectId: string;
+  state: IndexState;
+  revision: string | null;
+  indexedAt: string | null;
+  fileCount: number;
+  symbolCount: number;
+  updatedAt: string;
+}

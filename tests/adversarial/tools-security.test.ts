@@ -90,9 +90,27 @@ test('sensitive paths are denied by baseline policy', () => {
 test('unknown tool is rejected and recorded', () => {
   const f = fixture();
   try {
-    const result = f.engine.execute(req(f, 'terminal.exec', { argv: ['rm', '-rf', '/'] }));
+    const result = f.engine.execute(req(f, 'nonexistent.tool', { argv: ['rm', '-rf', '/'] }));
     assert.equal(result.status, 'DENIED');
     assert.match(String(result.error), /unknown tool/);
+  } finally { f.db.close(); rmSync(f.dir, { recursive: true, force: true }); rmSync(f.outside, { recursive: true, force: true }); }
+});
+
+test('terminal.exec is registered but denied by baseline policy', () => {
+  const f = fixture();
+  try {
+    const result = f.engine.execute(req(f, 'terminal.exec', { argv: ['rm', '-rf', '/'] }));
+    assert.equal(result.status, 'DENIED');
+    assert.match(String(result.error), /denied|not allowlisted/);
+  } finally { f.db.close(); rmSync(f.dir, { recursive: true, force: true }); rmSync(f.outside, { recursive: true, force: true }); }
+});
+
+test('write_file is denied when filesystem_write is not granted', () => {
+  const f = fixture();
+  try {
+    const result = f.engine.execute(req(f, 'write_file', { path: 'notes.txt', content: 'hi' }));
+    assert.equal(result.status, 'DENIED');
+    assert.equal((result.metadata as Record<string, unknown>).phase, 'POLICY');
   } finally { f.db.close(); rmSync(f.dir, { recursive: true, force: true }); rmSync(f.outside, { recursive: true, force: true }); }
 });
 

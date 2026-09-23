@@ -17,6 +17,9 @@ import type { ToolEngine } from '../tools/tool-engine.js';
 import type { VerificationEngine, VerifyInput } from '../verification/verification-engine.js';
 import { decideRecovery, type RecoveryOutcome } from '../recovery/recovery-engine.js';
 import type { EvaluationRecorder } from '../evaluation/evaluation-recorder.js';
+import type { MemoryEngine } from '../memory/memory-engine.js';
+import { reconcileConfig } from '../config/config-reconciler.js';
+import type { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { GitInspector } from '../git/git-inspector.js';
 import type { RuntimeConfig } from '../config/config.js';
 
@@ -34,6 +37,9 @@ export interface OrchestratorDeps {
   toolEngine: ToolEngine;
   verificationEngine: VerificationEngine;
   evaluationRecorder: EvaluationRecorder;
+  memoryEngine?: MemoryEngine;
+  logger?: StructuredLogger;
+  metrics?: MetricsRegistry;
 }
 
 export interface RunResult {
@@ -110,6 +116,8 @@ export class RuntimeOrchestrator {
     } catch (error) {
       failureCategory = classify(error);
       events.append({ projectId: task.projectId, taskId, attemptId: attempt.attemptId, type: 'BackendRequestFailed', source: 'BACKEND', payload: { category: failureCategory } });
+      this.deps.logger?.error('BACKEND', 'backend request failed', { category: failureCategory }, { task_id: taskId, attempt_id: attempt.attemptId });
+      this.deps.metrics?.increment('runtime.backend_failures_total', 1, { category: failureCategory });
     }
 
     // A tool request for a non-existent/invalid tool is not an execution failure of
@@ -156,7 +164,17 @@ export class RuntimeOrchestrator {
       if (recovery.decision === 'FAIL') finalState = this.transitionTo(taskId, 'FAILED');
       else finalState = this.transitionTo(taskId, 'PAUSED');
       events.append({ projectId: task.projectId, taskId, attemptId: attempt.attemptId, type: 'RecoveryDecisionMade', source: 'RUNTIME', payload: { decision: recovery.decision, reason: recovery.reason } });
+
+      // Persist the failure as durable memory for later attempts (spec 03 §2).
+      this.deps.memoryEngine?.recordFailure({
+        projectId: task.projectId, taskId, attemptId: attempt.attemptId,
+        summary: `Attempt ${attempt.attemptNumber} failed (${failureCategory ?? verificationStatus}): ${task.title}`
+      });
     }
+
+    this.deps.metrics?.increment('runtime.attempts_total', 1, { outcome, verification: verificationStatus });
+    this.deps.metrics?.observe('runtime.attempt_duration_ms', Date.parse(nowIso()) - Date.parse(startedAt), { backend: this.currentBackendId });
+    this.deps.logger?.info('TASK', 'attempt finished', { outcome, verification: verificationStatus, finalState }, { task_id: taskId, attempt_id: attempt.attemptId });
 
     this.deps.evaluationRecorder.record({
       taskId, attemptId: attempt.attemptId, backendId: attempt.backendId, provider: this.providerName(), model: attempt.model,
@@ -171,9 +189,10 @@ export class RuntimeOrchestrator {
     };
   }
 
-  // Resume: rebuild context from the latest checkpoint after reconciling workspace
-  // and in-flight tool state (spec 11 §8, 13 §8). Old context is evidence, not input.
-  resume(taskId: string): { checkpointId: string | null; reconciledToolRuns: string[]; state: Task['state'] } {
+  // Resume: rebuild context from the latest checkpoint after reconciling workspace,
+  // in-flight tool state and configuration (spec 11 §8, 13 §8, 16 §7). Old context
+  // is evidence, not blindly reusable execution input.
+  resume(taskId: string): { checkpointId: string | null; reconciledToolRuns: string[]; state: Task['state']; config: ReturnType<typeof reconcileConfig> | null } {
     const task = this.deps.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
     const checkpoint = this.deps.checkpoints.latest(taskId);
@@ -184,8 +203,38 @@ export class RuntimeOrchestrator {
       }
       return affected;
     });
+
+    // Configuration reconciliation: a semantic change cannot be silently applied
+    // to an active Attempt (spec 16 §7).
+    let config: ReturnType<typeof reconcileConfig> | null = null;
+    const activeAttemptId = task.currentAttemptId ?? checkpoint?.attemptId ?? null;
+    if (activeAttemptId) {
+      const snapshot = this.deps.configSnapshots.getForAttempt(activeAttemptId);
+      if (snapshot) {
+        config = reconcileConfig(snapshot, {
+          profile: this.deps.config.profile, backendId: this.currentBackendId, model: this.deps.config.backend.model,
+          policyVersion: this.deps.config.policyVersion,
+          effectiveConfig: this.effectiveConfig(), effectivePolicy: this.effectivePolicy()
+        });
+        if (!config.compatible) {
+          this.deps.events.append({
+            projectId: task.projectId, taskId, attemptId: activeAttemptId, type: 'ConfigReconciliationMismatch',
+            source: 'RUNTIME', payload: { changedFields: config.changedFields, reason: config.reason }
+          });
+        }
+      }
+    }
+
+    // If configuration drifted, PAUSE instead of resuming under different semantics.
+    if (config && !config.compatible) {
+      if (task.state === 'RUNNING' || task.state === 'WAITING_TOOL') this.deps.tasks.transition(taskId, 'PAUSED');
+      const paused = this.deps.tasks.get(taskId)!.state;
+      this.deps.metrics?.increment('runtime.config_reconciliation_failures_total', 1);
+      return { checkpointId: checkpoint?.checkpointId ?? null, reconciledToolRuns: reconciled, state: paused, config };
+    }
+
     if (task.state === 'PAUSED') this.deps.tasks.transition(taskId, 'RUNNING');
-    return { checkpointId: checkpoint?.checkpointId ?? null, reconciledToolRuns: reconciled, state: this.deps.tasks.get(taskId)!.state };
+    return { checkpointId: checkpoint?.checkpointId ?? null, reconciledToolRuns: reconciled, state: this.deps.tasks.get(taskId)!.state, config };
   }
 
   private buildContext(task: Task, attemptId: string, model: string): ContextPack {
@@ -233,8 +282,8 @@ export class RuntimeOrchestrator {
   private providerName(): string { return 'ollama'; }
 
   private effectiveConfig(): Record<string, unknown> {
-    const { context, tools, maxRecoveryAttempts, profile } = this.deps.config;
-    return { context, tools, maxRecoveryAttempts, profile };
+    const { context, tools, maxRecoveryAttempts, profile, workspaceRoot } = this.deps.config;
+    return { context, tools, maxRecoveryAttempts, profile, workspaceRoot };
   }
 
   private effectivePolicy(): Record<string, unknown> {

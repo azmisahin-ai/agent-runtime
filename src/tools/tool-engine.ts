@@ -14,6 +14,8 @@ export interface ToolEngineOptions {
   policy: PolicyEngine;
   maxOutputBytes?: number;
   gitRunner?: (args: string[]) => string;
+  authorizeCommand?: (argv: string[]) => { allowed: boolean; reason: string };
+  commandTimeoutMs?: number;
 }
 
 // The single authorized path for tool execution (spec 10 §1, 14 §5):
@@ -89,7 +91,9 @@ export class ToolEngine {
         workspaceRoot: this.options.workspaceRoot,
         pathGuard: this.options.pathGuard,
         maxOutputBytes: this.maxOutputBytes,
-        gitRunner: this.options.gitRunner
+        gitRunner: this.options.gitRunner,
+        authorizeCommand: this.options.authorizeCommand,
+        commandTimeoutMs: this.options.commandTimeoutMs
       };
       const raw = tool.execute(request.arguments, context);
       const { text, truncated } = truncateOutput(raw, this.maxOutputBytes);
