@@ -22,7 +22,7 @@ authority for Task state, policy, tool execution or success.
 
 ## Evidence
 
-- Full test suite: **179/179 passing** (`npm run check`), spanning unit, integration,
+- Full test suite: **183/183 passing** (`npm run check`), spanning unit, integration,
   adversarial, recovery, evaluation and end-to-end tests.
 - Every normative requirement row in `docs/TRACEABILITY_MATRIX.md` is marked PASS with
   a linked implementation and test.
