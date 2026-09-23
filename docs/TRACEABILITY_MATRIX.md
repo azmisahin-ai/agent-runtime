@@ -33,6 +33,9 @@
 | Workspace lock (single writer) | 14 | `src/runtime/workspace-lock.ts`, orchestrator | `tests/adversarial/hardening.test.ts` | PASS (M4) |
 | Security audit trail (hash chain) | 15 | `src/security/security-audit.ts`, `migrations/005_m4_hardening.sql` | `tests/adversarial/hardening.test.ts` | PASS (M4) |
 | Client cannot supply checks / widen policy | 09, 11, 15 | `src/api/runtime-api.ts`, `src/api/server.ts`, `src/tools/policy.ts` | `tests/e2e/runtime-api.test.ts`, `tests/adversarial/hardening.test.ts` | PASS (M4) |
+| Destructive-operation controls (Git deny-by-default) | 15 | `src/security/destructive-operations.ts`, `src/tools/builtin-tools.ts` (`authorizeGit`), `src/config/config.ts` | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
+| Process sandbox (single chokepoint, explicit env, bounded) | 15 | `src/security/process-sandbox.ts`, `src/tools/builtin-tools.ts` (`runCommand`), `src/runtime/bootstrap.ts` | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
+| Persistence-failure handling (durability precondition) | 13 | `src/security/persistence-guard.ts`, `src/runtime/orchestrator.ts` (`assertDurable`) | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
 | Backend abstraction | 05 | `src/backends/agent-backend.ts` | integration tests | PASS (M1) |
 | Ollama adapter | 05, 07 | `src/backends/ollama-backend.ts` | `tests/integration/ollama-backend.test.ts` | PASS (M1) |
 | Verification independent of claims | 11 | `src/verification/verification-engine.ts` | verification tests | PASS (M1) |

@@ -1,7 +1,7 @@
 # Agent Runtime — Status
 
-**Last repository checkpoint:** M5 evaluation & benchmarking (suite, runner, metrics, integrity, regression)
-**Current milestone:** M5 complete / V0.1 release candidate next
+**Last repository checkpoint:** M5 evaluation & benchmarking (suite, runner, metrics, integrity, regression) plus the M4 security remainder (sandbox, destructive-op controls, persistence guard)
+**Current milestone:** M5 complete, M4 remainder complete / V0.1 release candidate next
 
 ## Verified implementation
 
@@ -41,6 +41,7 @@
 - WorkspaceLock: exclusive single-writer lock with dead-holder reclaim
 - Idempotency store for asynchronous state-changing operations
 - Tamper-evident hash-chained security audit trail
+- M4 security remainder: `DestructiveOperationPolicy` (Git subcommand classification, destructive ops denied by default and only allowed with an explicit operator opt-in), `ProcessSandbox` (single execution chokepoint, explicit allowlisted environment with no secret inheritance, timeout, bounded output) and `PersistenceGuard` (durability probe; a non-durable canonical store parks the task instead of advancing it, spec 13 §10)
 - M5 Evaluation & Benchmarking (spec 06): 20-task initial suite (5 repository-analysis, 5 bug-fix, 5 test-fix, 5 feature) with expected behavior, verification intent, constraints and isolation
 - `EvaluationRunner`: immutable evaluation runs with reproducibility metadata (suite version, model/backend, repository revision, context/memory/tool/verification configuration, baseline hash) and per-run metrics/artifacts/integrity observations
 - Append-only evaluation persistence (`evaluation_runs`, `evaluation_metrics`, `evaluation_artifacts`, `evaluation_events`, `evaluation_integrity`); no update or delete path
@@ -49,23 +50,21 @@
 - `IntegrityChecker`: test tampering, verification bypass, side effects and baseline-mismatch detection
 - `EvaluationReporter` (per-category dimensions and suite comparison), `RegressionRunner` (baseline drop detection with re-derived attribution), `ArtifactStore`, `RuntimeEvaluationExecutor` (runs suite tasks through the real orchestrator)
 - Read-only evaluation API under `/api/v1/evaluations` (suite, runs, run detail, report, compare)
-- M0–M5 unit/integration/adversarial/recovery/e2e tests (155 passing)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (165 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
-- OS-level sandboxing for tool execution and broader destructive-operation controls (M4 remainder)
-- Persistence-failure injection and backend/tool crash hardening beyond current guards (M4 remainder)
 - Live-model benchmark execution: the M5 harness runs through the real orchestrator, but a live Ollama model is not available in this environment, so suite runs are exercised with a scripted backend
+- Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
 - Multi-provider backends beyond Ollama
 
 ## Next exact work
 
 1. Install dependencies if missing.
 2. Run `npm run check` (must be green: build + tests).
-3. Finish M4 remainder: OS-level tool sandboxing, persistence-failure injection, destructive-Git controls.
-4. Begin V0.1 release-candidate consolidation (spec 17): documentation, status and traceability agreement; live-model benchmark run when Ollama is available.
-5. Update status + traceability after each coherent slice.
+3. Begin V0.1 release-candidate consolidation (spec 17): documentation, status and traceability agreement; live-model benchmark run when Ollama is available.
+4. Update status + traceability after each coherent slice.
 
 ## Environment notes
 
@@ -75,13 +74,16 @@
 - Default network policy is DENY; process execution and filesystem writes are disabled
   by default and widen only via explicit flags
   (`AGENT_RUNTIME_ALLOW_PROCESS`, `AGENT_RUNTIME_ALLOW_NETWORK`,
-  `AGENT_RUNTIME_GRANTED_CAPABILITIES`, `AGENT_RUNTIME_ALLOWED_COMMANDS`).
+  `AGENT_RUNTIME_GRANTED_CAPABILITIES`, `AGENT_RUNTIME_ALLOWED_COMMANDS`,
+  `AGENT_RUNTIME_ALLOW_DESTRUCTIVE`). Destructive Git operations are denied unless
+  `AGENT_RUNTIME_ALLOW_DESTRUCTIVE=true`; process execution always flows through the
+  sandbox and never inherits ambient credentials.
 
 ## Important interpretation
 
 The repository is a self-contained architecture + implementation handoff. Specifications
 describe the target; source and tests prove the current milestone. M0, the M1 vertical
-slice, M2 durable runtime, M3 intelligence layer, the M4 API/locking/audit slice, and
-the M5 evaluation & benchmarking layer are implemented and tested; the remainder of M4
-(OS-level sandboxing, persistence-failure injection, destructive-Git controls) and the
-V0.1 release-candidate consolidation remain planned.
+slice, M2 durable runtime, M3 intelligence layer, M4 (API/locking/audit plus the security
+remainder: sandbox, destructive-operation controls, persistence-failure handling), and
+the M5 evaluation & benchmarking layer are implemented and tested. The V0.1
+release-candidate consolidation and live-model benchmark execution remain planned.

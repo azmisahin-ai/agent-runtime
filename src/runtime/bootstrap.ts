@@ -31,6 +31,9 @@ import { OllamaBackend } from '../backends/ollama-backend.js';
 import { RuntimeOrchestrator } from './orchestrator.js';
 import { WorkspaceLock } from './workspace-lock.js';
 import { SecurityAudit } from '../security/security-audit.js';
+import { DestructiveOperationPolicy } from '../security/destructive-operations.js';
+import { ProcessSandbox } from '../security/process-sandbox.js';
+import { PersistenceGuard } from '../security/persistence-guard.js';
 import { RuntimeApiService } from '../api/runtime-api.js';
 import { EvaluationRunRepository } from '../persistence/evaluation-run-repository.js';
 import { EvaluationRunner } from '../evaluation/evaluation-runner.js';
@@ -73,6 +76,9 @@ export interface Runtime {
   orchestrator: RuntimeOrchestrator;
   backend: OllamaBackend;
   securityAudit: SecurityAudit;
+  destructiveOps: DestructiveOperationPolicy;
+  sandbox: ProcessSandbox;
+  persistenceGuard: PersistenceGuard;
   workspaceLock: WorkspaceLock;
   api: RuntimeApiService;
   evaluationRuns: EvaluationRunRepository;
@@ -112,6 +118,17 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     allowNetworkAccess: config.allowNetworkAccess,
     allowedCommands: config.allowedCommands
   });
+  // Destructive operations are classified and denied before execution (spec 15 §9).
+  const destructiveOps = new DestructiveOperationPolicy({
+    allowDestructive: config.allowDestructiveOperations
+  });
+  // All process execution flows through the sandbox: controlled cwd, explicit
+  // environment, timeout and bounded output (spec 15 §7).
+  const sandbox = new ProcessSandbox({
+    workspaceRoot: config.workspaceRoot,
+    maxOutputBytes: config.tools.maxOutputBytes,
+    timeoutMs: config.tools.commandTimeoutMs
+  });
   const toolEngine = new ToolEngine(db, toolRuns, events, {
     workspaceRoot: config.workspaceRoot,
     pathGuard: { workspaceRoot: config.workspaceRoot },
@@ -119,7 +136,9 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     maxOutputBytes: config.tools.maxOutputBytes,
     gitRunner: git.isRepository() ? (args) => git.run(args) : undefined,
     authorizeCommand: (argv) => policy.authorizeCommand(argv),
-    commandTimeoutMs: config.tools.commandTimeoutMs
+    commandTimeoutMs: config.tools.commandTimeoutMs,
+    runCommand: (argv, cwd, timeoutMs) => sandbox.run(argv, cwd, timeoutMs),
+    authorizeGit: (args) => destructiveOps.authorizeGit(args)
   });
   for (const tool of builtinTools()) toolEngine.register(tool);
 
@@ -148,6 +167,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   });
 
   const securityAudit = new SecurityAudit(db);
+  const persistenceGuard = new PersistenceGuard(db);
   const workspaceLock = new WorkspaceLock(config.workspaceRoot);
 
   const failureClassifier = new FailureClassifier();
@@ -161,7 +181,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const orchestrator = new RuntimeOrchestrator({
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
-    memoryEngine, contextRetriever, logger, metrics, workspaceLock
+    memoryEngine, contextRetriever, logger, metrics, workspaceLock, persistenceGuard
   }, backend);
 
   const runtime: Runtime = {
@@ -170,6 +190,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     contextEngine, compactor, toolEngine, verificationEngine, evaluationRecorder, memoryEngine,
     repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics,
     orchestrator, backend, securityAudit, workspaceLock,
+    destructiveOps, sandbox, persistenceGuard,
     evaluationRuns, evaluationRunner, evaluationReporter, regressionRunner, failureClassifier, integrityChecker, artifactStore,
     api: undefined as unknown as RuntimeApiService
   };

@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import type { ToolDefinition, PermissionLevel } from '../domain/types.js';
 import { redactSecrets } from '../security/secret-redaction.js';
 import { resolveWorkspacePath, type PathGuardOptions } from './path-guard.js';
@@ -12,6 +11,12 @@ export interface ToolExecutionContext {
   gitRunner?: (args: string[]) => string;
   authorizeCommand?: (argv: string[]) => { allowed: boolean; reason: string };
   commandTimeoutMs?: number;
+  // Process execution happens only through the sandbox (spec 15 §7). When absent,
+  // terminal.exec refuses to run rather than falling back to ambient execution.
+  runCommand?: (argv: string[], cwd: string, timeoutMs: number) => { stdout: string; stderr: string; exitCode: number | null; timedOut: boolean };
+  // Git operations are classified before execution; destructive ones are denied by
+  // baseline policy (spec 15 §9).
+  authorizeGit?: (args: string[]) => { allowed: boolean; reason: string; operationClass: string };
 }
 
 export interface ToolImplementation {
@@ -180,13 +185,11 @@ function terminalExecTool(): ToolImplementation {
       if (!decision.allowed) throw new Error(`command denied: ${decision.reason}`);
       const cwd = args.cwd ? resolveWorkspacePath(context.pathGuard, String(args.cwd)).absolutePath : context.workspaceRoot;
       const timeout = context.commandTimeoutMs ?? 30_000;
-      const result = spawnSync(argv[0], argv.slice(1), {
-        cwd, timeout, encoding: 'utf8', shell: false,
-        maxBuffer: context.maxOutputBytes || MAX_DEFAULT_OUTPUT,
-        env: { PATH: process.env.PATH ?? '', HOME: cwd, LANG: process.env.LANG ?? 'C' }
-      });
-      if (result.error) throw new Error(`command failed to start: ${result.error.message}`);
-      const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+      // All process execution is funneled through the sandbox (spec 15 §7). If no
+      // sandbox is configured, execution is refused: there is no ambient fallback.
+      if (!context.runCommand) throw new Error('command denied: no process sandbox configured');
+      const result = context.runCommand(argv, cwd, timeout);
+      const combined = `${result.stdout}${result.stderr}`;
       return JSON.stringify(redactSecrets(truncate(combined, context.maxOutputBytes || MAX_DEFAULT_OUTPUT).text));
     }
   };
@@ -207,7 +210,12 @@ function gitTool(name: 'git.status' | 'git.diff' | 'git.log' | 'git.branch'): To
     },
     execute(_args, context) {
       if (!context.gitRunner) throw new Error('git runner is not configured');
-      return context.gitRunner(gitArgs[name]);
+      const args = gitArgs[name];
+      // Destructive Git is denied by baseline policy; read operations pass through
+      // (spec 15 §9). Classification happens before execution, never after.
+      const decision = context.authorizeGit?.(args);
+      if (decision && !decision.allowed) throw new Error(`git operation denied: ${decision.reason}`);
+      return context.gitRunner(args);
     }
   };
 }

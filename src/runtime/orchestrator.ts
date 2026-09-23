@@ -24,6 +24,7 @@ import type { StructuredLogger, MetricsRegistry } from '../observability/logger.
 import { GitInspector } from '../git/git-inspector.js';
 import type { RuntimeConfig } from '../config/config.js';
 import type { WorkspaceLock } from './workspace-lock.js';
+import type { PersistenceGuard } from '../security/persistence-guard.js';
 
 export interface OrchestratorDeps {
   db: Database;
@@ -44,6 +45,7 @@ export interface OrchestratorDeps {
   logger?: StructuredLogger;
   metrics?: MetricsRegistry;
   workspaceLock?: WorkspaceLock;
+  persistenceGuard?: PersistenceGuard;
 }
 
 // Runtime-owned verification checks. Clients cannot supply checks (spec 11 §2, 15
@@ -112,10 +114,34 @@ export class RuntimeOrchestrator {
     }
   }
 
+  // Canonical durability is checked before an attempt starts. If canonical state
+  // cannot be persisted, the runtime does not proceed as if durable state exists
+  // (spec 13 §10). The task is parked rather than silently continued.
+  private assertDurable(taskId: string): void {
+    const guard = this.deps.persistenceGuard;
+    if (!guard) return;
+    const report = guard.probe();
+    if (report.durable) return;
+    this.deps.metrics?.increment('runtime.persistence_guard_failures_total', 1);
+    this.deps.logger?.error('PERSISTENCE', 'canonical durability probe failed', { error: report.error }, { task_id: taskId });
+    const task = this.deps.tasks.get(taskId);
+    if (task && task.state !== 'PAUSED' && task.state !== 'FAILED' && task.state !== 'COMPLETED' && task.state !== 'CANCELLED') {
+      try {
+        // CREATED cannot pause directly; queue is the only legal route to PAUSED.
+        if (task.state === 'CREATED') this.deps.tasks.transition(taskId, 'QUEUED');
+        this.deps.tasks.transition(taskId, 'PAUSED');
+      } catch { /* durable state is unavailable; do not mask the original failure */ }
+    }
+    throw new Error(`PERSISTENCE_FAILURE: canonical state is not durable (${report.error})`);
+  }
+
   private async runAttempt(taskId: string, verification: Omit<VerifyInput, 'taskId' | 'attemptId' | 'agentClaim'>, repositoryRevision: string | null = null): Promise<RunResult> {
     const { db, config, tasks, events } = this.deps;
     const task = tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
+
+    // Durable canonical state is a precondition for progress (spec 13 §10).
+    this.assertDurable(taskId);
 
     // Preconditions: an attempt runs only from QUEUED or RUNNING (spec 14 §3.2).
     if (task.state === 'COMPLETED' || task.state === 'FAILED' || task.state === 'CANCELLED') {

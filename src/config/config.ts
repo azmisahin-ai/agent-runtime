@@ -13,6 +13,7 @@ export interface RuntimeConfig {
   grantedCapabilities: ToolCapability[];
   allowProcessExecution: boolean;
   allowNetworkAccess: boolean;
+  allowDestructiveOperations: boolean;
   allowedCommands: string[];
   profile: string;
   policyVersion: number;
@@ -77,6 +78,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     grantedCapabilities: parseCapabilities(env),
     allowProcessExecution: allowProcess,
     allowNetworkAccess: allowNetwork,
+    // Destructive operations are denied by default and require an explicit
+    // operator opt-in (spec 15 §9).
+    allowDestructiveOperations: env.AGENT_RUNTIME_ALLOW_DESTRUCTIVE === 'true',
     allowedCommands: (env.AGENT_RUNTIME_ALLOWED_COMMANDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
     profile: env.AGENT_RUNTIME_PROFILE ?? 'local-dev',
     policyVersion: 1,
