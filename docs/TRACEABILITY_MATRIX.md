@@ -45,7 +45,18 @@
 | Terminal execution (policy-gated) | 10, 15 | `src/tools/builtin-tools.ts` (`terminal.exec`) + command allowlist | adversarial suite, e2e allowlist test | PASS (M2) |
 | Context compaction / flush | 04, 03 | `src/context/compactor.ts` | `tests/unit/compaction.test.ts` | PASS (M2) |
 | Config reconciliation on resume | 16 | `src/config/config-reconciler.ts`, orchestrator resume | `tests/unit/config-reconciler.test.ts`, e2e drift test | PASS (M2) |
-| Evaluation reproducibility | 06 | `src/evaluation/evaluation-recorder.ts` | e2e evaluation assertions | PARTIAL |
+| Evaluation reproducibility | 06 | `src/evaluation/evaluation-recorder.ts`, `src/evaluation/evaluation-runner.ts` (baseline hash, run metadata, `migrations/006_m5_evaluation.sql`) | `tests/evaluation/evaluation.test.ts`, `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
+| 20-task initial suite | 06 | `src/evaluation/suite.ts` (`INITIAL_SUITE`) | `tests/evaluation/evaluation.test.ts` (20 tasks, 5 per category) | PASS (M5) |
+| Evaluation metrics | 06 | `src/evaluation/metrics.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Evaluation ordering invariant (UNKNOWN != SUCCESS/PASS) | 06 | `src/evaluation/evaluation-runner.ts`, `src/evaluation/metrics.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Failure attribution | 06 | `src/evaluation/failure-classifier.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Benchmark integrity / tamper detection | 06 | `src/evaluation/integrity.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Evaluation artifacts (content-addressed) | 06 | `src/evaluation/artifact-store.ts`, `evaluation_artifacts` | `tests/evaluation/evaluation.test.ts`, e2e | PASS (M5) |
+| Immutable evaluation evidence (append-only) | 06 | `src/persistence/evaluation-run-repository.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Evaluation reporting / comparison (no universal score) | 06 | `src/evaluation/reporter.ts` | `tests/evaluation/evaluation.test.ts`, e2e | PASS (M5) |
+| Regression runner | 06 | `src/evaluation/regression-runner.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
+| Suite execution through the real runtime | 06 | `src/evaluation/runtime-executor.ts`, orchestrator | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
+| Read-only evaluation API | 06, 09 | `src/api/runtime-api.ts`, `src/api/server.ts` | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Runtime owns continuity | 02, 14 | orchestrator state control + checkpoint/resume | e2e lifecycle tests | PASS (M1) |
 
 ## Status definitions

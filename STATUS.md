@@ -1,7 +1,7 @@
 # Agent Runtime — Status
 
-**Last repository checkpoint:** M4 reliability & security hardening (API, locking, audit)
-**Current milestone:** M4 in progress / M5 next
+**Last repository checkpoint:** M5 evaluation & benchmarking (suite, runner, metrics, integrity, regression)
+**Current milestone:** M5 complete / V0.1 release candidate next
 
 ## Verified implementation
 
@@ -41,22 +41,30 @@
 - WorkspaceLock: exclusive single-writer lock with dead-holder reclaim
 - Idempotency store for asynchronous state-changing operations
 - Tamper-evident hash-chained security audit trail
-- M0–M4 unit/integration/adversarial/recovery/e2e tests (143 passing)
+- M5 Evaluation & Benchmarking (spec 06): 20-task initial suite (5 repository-analysis, 5 bug-fix, 5 test-fix, 5 feature) with expected behavior, verification intent, constraints and isolation
+- `EvaluationRunner`: immutable evaluation runs with reproducibility metadata (suite version, model/backend, repository revision, context/memory/tool/verification configuration, baseline hash) and per-run metrics/artifacts/integrity observations
+- Append-only evaluation persistence (`evaluation_runs`, `evaluation_metrics`, `evaluation_artifacts`, `evaluation_events`, `evaluation_integrity`); no update or delete path
+- `EvaluationMetrics`: success/first-attempt/verification rates, latency mean/median/p95, tool calls/failures/denials/timeouts, recovery attempts, human interventions, context relevance/duplication ratios, memory hits/misses; no universal score
+- `FailureClassifier`: evidence-cited primary and secondary failure attribution (UNKNOWN is not PASS)
+- `IntegrityChecker`: test tampering, verification bypass, side effects and baseline-mismatch detection
+- `EvaluationReporter` (per-category dimensions and suite comparison), `RegressionRunner` (baseline drop detection with re-derived attribution), `ArtifactStore`, `RuntimeEvaluationExecutor` (runs suite tasks through the real orchestrator)
+- Read-only evaluation API under `/api/v1/evaluations` (suite, runs, run detail, report, compare)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (155 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
 - OS-level sandboxing for tool execution and broader destructive-operation controls (M4 remainder)
 - Persistence-failure injection and backend/tool crash hardening beyond current guards (M4 remainder)
-- Full evaluation harness / reproducibility pipeline and benchmark suite (M5)
+- Live-model benchmark execution: the M5 harness runs through the real orchestrator, but a live Ollama model is not available in this environment, so suite runs are exercised with a scripted backend
 - Multi-provider backends beyond Ollama
 
 ## Next exact work
 
 1. Install dependencies if missing.
 2. Run `npm run check` (must be green: build + tests).
-3. Finish M4: OS-level tool sandboxing, persistence-failure injection, destructive-Git controls.
-4. Then begin M5 (Evaluation & Benchmarking) from roadmap 18.
+3. Finish M4 remainder: OS-level tool sandboxing, persistence-failure injection, destructive-Git controls.
+4. Begin V0.1 release-candidate consolidation (spec 17): documentation, status and traceability agreement; live-model benchmark run when Ollama is available.
 5. Update status + traceability after each coherent slice.
 
 ## Environment notes
@@ -73,5 +81,7 @@
 
 The repository is a self-contained architecture + implementation handoff. Specifications
 describe the target; source and tests prove the current milestone. M0, the M1 vertical
-slice, M2 durable runtime, M3 intelligence layer, and the M4 API/locking/audit slice are
-implemented and tested; the remainder of M4 and later milestones remain planned.
+slice, M2 durable runtime, M3 intelligence layer, the M4 API/locking/audit slice, and
+the M5 evaluation & benchmarking layer are implemented and tested; the remainder of M4
+(OS-level sandboxing, persistence-failure injection, destructive-Git controls) and the
+V0.1 release-candidate consolidation remain planned.

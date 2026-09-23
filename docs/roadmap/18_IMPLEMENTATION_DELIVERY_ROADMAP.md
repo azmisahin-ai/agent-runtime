@@ -38,6 +38,8 @@ Sandboxing, policy engine, secret handling, prompt-injection defenses, persisten
 
 20-task initial suite, reproducibility metadata, evaluation artifacts, regression runner, failure attribution and model/backend/context/memory comparisons under controlled conditions.
 
+**Current repository:** M5 is implemented and verified. Delivered: the 20-task initial suite (`src/evaluation/suite.ts`; 5 repository-analysis, 5 bug-fix, 5 test-fix, 5 feature, each with expected behavior, verification intent, constraints and isolation), the `EvaluationRunner` (immutable runs, per-run metrics, artifacts, integrity observations), append-only persistence (`evaluation_runs`, `evaluation_metrics`, `evaluation_artifacts`, `evaluation_events`, `evaluation_integrity`), reproducibility metadata (suite/model/backend/revision/context/memory/tool/verification configuration plus a baseline hash), `FailureClassifier` (evidence-cited primary and secondary causes), `IntegrityChecker` (test tampering, verification bypass, side effects, baseline mismatch), `EvaluationMetrics` (success/first-attempt/verification rates, latency mean/median/p95, tool calls/failures/denials/timeouts, recovery, human interventions, context/memory ratios), `EvaluationReporter` (per-category dimensions and comparisons, no universal score), `RegressionRunner`, `ArtifactStore` and `RuntimeEvaluationExecutor` (runs suite tasks through the real orchestrator). Exposed read-only under `/api/v1/evaluations`. See `STATUS.md` and `docs/TRACEABILITY_MATRIX.md`.
+
 ## V0.1 Release Candidate
 
 All core subsystems implemented, integrated and covered by unit/integration/adversarial/recovery/e2e tests. Documentation, status and traceability agree with actual code.

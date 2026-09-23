@@ -8,6 +8,7 @@ import {
 import { SecurityAudit } from '../security/security-audit.js';
 import { IdempotencyStore } from '../persistence/idempotency-store.js';
 import { GitInspector } from '../git/git-inspector.js';
+import { INITIAL_SUITE, categoryCounts } from '../evaluation/suite.js';
 
 // Explicit principal identities. A caller can never become an authority merely by
 // asserting a model identity (spec 09 §9). Model output is untrusted data.
@@ -210,6 +211,54 @@ export class RuntimeApiService {
   repositoryStatus(ctx: ApiContext, projectId: string) {
     if (!this.runtime.projects.get(projectId)) throw notFound('project', projectId);
     return this.runtime.repositoryReconciler.reconcile(projectId);
+  }
+
+  // ---- Evaluation & benchmarking (spec 06) ----
+
+  evaluationSuite() {
+    return { suite_id: INITIAL_SUITE.suiteId, version: INITIAL_SUITE.version, task_count: INITIAL_SUITE.tasks.length, by_category: categoryCounts(INITIAL_SUITE), tasks: INITIAL_SUITE.tasks.map(task => ({ task_pack_id: task.taskPackId, category: task.category, title: task.title, expected_behavior: task.expectedBehavior, verification_intent: task.verificationIntent, constraints: task.constraints, isolation: task.isolation })) };
+  }
+
+  evaluationRuns(suiteId?: string | null, category?: string | null) {
+    return this.runtime.evaluationRuns.listRuns({ suiteId: suiteId ?? undefined, category: category ?? undefined })
+      .map(run => ({
+        run_id: run.runId, suite_id: run.suiteId, task_pack_id: run.taskPackId, category: run.category,
+        outcome: run.outcome, verification: run.verification, primary_cause: run.primaryCause,
+        secondary_causes: run.secondaryCauses, model: run.model, backend_id: run.backendId,
+        repository_revision: run.repositoryRevision, baseline_hash: run.baselineHash, reproducible: run.reproducible,
+        started_at: run.startedAt, ended_at: run.endedAt
+      }));
+  }
+
+  evaluationRun(runId: string) {
+    const run = this.runtime.evaluationRuns.getRun(runId);
+    if (!run) throw notFound('evaluation run', runId);
+    return {
+      run_id: run.runId, suite_id: run.suiteId, suite_version: run.suiteVersion, task_pack_id: run.taskPackId,
+      category: run.category, expected_behavior: run.expectedBehavior, constraints: run.constraints, isolation: run.isolation,
+      repository_revision: run.repositoryRevision, backend_id: run.backendId, provider: run.provider, model: run.model,
+      runtime_version: run.runtimeVersion, context_config: run.contextConfig, memory_snapshot: run.memorySnapshot,
+      tool_config: run.toolConfig, verification_config: run.verificationConfig, baseline_hash: run.baselineHash,
+      outcome: run.outcome, verification: run.verification, failure_category: run.failureCategory,
+      primary_cause: run.primaryCause, secondary_causes: run.secondaryCauses, attribution_evidence: run.attributionEvidence,
+      reproducible: run.reproducible, started_at: run.startedAt, ended_at: run.endedAt,
+      metrics: this.runtime.evaluationRuns.listMetrics(runId),
+      artifacts: this.runtime.evaluationRuns.listArtifacts(runId),
+      integrity: this.runtime.evaluationRuns.listIntegrity(runId)
+    };
+  }
+
+  evaluationReport(suiteId: string) {
+    if (this.runtime.evaluationRuns.listRuns({ suiteId }).length === 0) throw notFound('evaluation suite', suiteId);
+    return this.runtime.evaluationReporter.summarize(suiteId);
+  }
+
+  evaluationCompare(leftSuiteId: string, rightSuiteId: string) {
+    const report = this.runtime.evaluationReporter.compare({ label: leftSuiteId, suiteId: leftSuiteId }, { label: rightSuiteId, suiteId: rightSuiteId });
+    if (report.left_run_count === 0 || report.right_run_count === 0) {
+      throw new ApiError('INVALID_REQUEST', 'Both suites must have recorded runs before comparison', false, { left: report.left_run_count, right: report.right_run_count });
+    }
+    return report;
   }
 
   // Repository read surfaces (spec 09 §4). These are read-only and never mutate

@@ -1,4 +1,5 @@
 import { Database } from '../persistence/database.js';
+import { join } from 'node:path';
 import { ProjectRepository } from '../persistence/project-repository.js';
 import { TaskRepository } from '../persistence/task-repository.js';
 import { CheckpointRepository } from '../persistence/checkpoint-repository.js';
@@ -31,6 +32,13 @@ import { RuntimeOrchestrator } from './orchestrator.js';
 import { WorkspaceLock } from './workspace-lock.js';
 import { SecurityAudit } from '../security/security-audit.js';
 import { RuntimeApiService } from '../api/runtime-api.js';
+import { EvaluationRunRepository } from '../persistence/evaluation-run-repository.js';
+import { EvaluationRunner } from '../evaluation/evaluation-runner.js';
+import { EvaluationReporter } from '../evaluation/reporter.js';
+import { RegressionRunner } from '../evaluation/regression-runner.js';
+import { FailureClassifier } from '../evaluation/failure-classifier.js';
+import { IntegrityChecker } from '../evaluation/integrity.js';
+import { ArtifactStore } from '../evaluation/artifact-store.js';
 import { repoPath } from './paths.js';
 
 export interface Runtime {
@@ -67,6 +75,13 @@ export interface Runtime {
   securityAudit: SecurityAudit;
   workspaceLock: WorkspaceLock;
   api: RuntimeApiService;
+  evaluationRuns: EvaluationRunRepository;
+  evaluationRunner: EvaluationRunner;
+  evaluationReporter: EvaluationReporter;
+  regressionRunner: RegressionRunner;
+  failureClassifier: FailureClassifier;
+  integrityChecker: IntegrityChecker;
+  artifactStore: ArtifactStore;
 }
 
 export function bootstrap(env: Record<string, string | undefined> = process.env): Runtime {
@@ -135,6 +150,14 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const securityAudit = new SecurityAudit(db);
   const workspaceLock = new WorkspaceLock(config.workspaceRoot);
 
+  const failureClassifier = new FailureClassifier();
+  const integrityChecker = new IntegrityChecker();
+  const evaluationRuns = new EvaluationRunRepository(db);
+  const artifactStore = new ArtifactStore(evaluationRuns, join(config.workspaceRoot, '.runtime', 'evaluation-artifacts'));
+  const evaluationRunner = new EvaluationRunner(evaluationRuns, artifactStore, failureClassifier, integrityChecker);
+  const evaluationReporter = new EvaluationReporter(evaluationRuns);
+  const regressionRunner = new RegressionRunner(evaluationRuns, failureClassifier);
+
   const orchestrator = new RuntimeOrchestrator({
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
@@ -147,6 +170,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     contextEngine, compactor, toolEngine, verificationEngine, evaluationRecorder, memoryEngine,
     repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics,
     orchestrator, backend, securityAudit, workspaceLock,
+    evaluationRuns, evaluationRunner, evaluationReporter, regressionRunner, failureClassifier, integrityChecker, artifactStore,
     api: undefined as unknown as RuntimeApiService
   };
   runtime.api = new RuntimeApiService(runtime);

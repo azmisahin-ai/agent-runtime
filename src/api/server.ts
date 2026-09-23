@@ -98,6 +98,27 @@ export class ApiServer {
       }
     }
 
+    if (head === 'evaluations' && method === 'GET') {
+      if (second === undefined) {
+        return { status: 200, payload: {
+          suite: this.service.evaluationSuite(),
+          runs: this.service.evaluationRuns(url.searchParams.get('suite_id'), url.searchParams.get('category'))
+        } };
+      }
+      if (second === 'suite' && segments.length === 2) return { status: 200, payload: this.service.evaluationSuite() };
+      if (second === 'runs' && segments.length === 2) {
+        return { status: 200, payload: { runs: this.service.evaluationRuns(url.searchParams.get('suite_id'), url.searchParams.get('category')) } };
+      }
+      if (second === 'runs' && segments.length === 3) return { status: 200, payload: this.service.evaluationRun(segments[2]) };
+      if (second === 'report' && segments.length === 3) return { status: 200, payload: this.service.evaluationReport(segments[2]) };
+      if (second === 'compare' && segments.length === 2) {
+        const left = url.searchParams.get('left');
+        const right = url.searchParams.get('right');
+        if (!left || !right) throw new ApiError('VALIDATION_ERROR', 'Query params left and right are required', false, { left, right });
+        return { status: 200, payload: this.service.evaluationCompare(left, right) };
+      }
+    }
+
     if (head === 'tasks' && second === undefined && method === 'POST') {
       return { status: 201, payload: this.service.createTask(ctx, asProjectId(body), body) };
     }
