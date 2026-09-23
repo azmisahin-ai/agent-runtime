@@ -9,7 +9,7 @@ const transitions: Record<TaskState, readonly TaskState[]> = {
   VERIFYING: ['COMPLETED', 'FAILED', 'PAUSED'],
   COMPLETED: [],
   FAILED: [],
-  PAUSED: ['QUEUED', 'RUNNING', 'CANCELLED'],
+  PAUSED: ['RUNNING', 'CANCELLED'],
   CANCELLED: [],
 };
 

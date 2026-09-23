@@ -18,6 +18,9 @@ export class TaskService {
     return this.db.transaction(() => {
       const before = this.tasks.get(taskId);
       if (!before) throw new Error(`Task not found: ${taskId}`);
+      // Idempotent repeat (spec 13 §7): requesting the state the task already holds
+      // must not create a duplicate state-change effect or event.
+      if (before.state === to) return before;
       const task = this.tasks.transition(taskId, to);
       this.events.append({ projectId: task.projectId, taskId, attemptId: task.currentAttemptId, type: 'TaskStateChanged', source: 'RUNTIME', payload: { from: before.state, to } });
       return task;
