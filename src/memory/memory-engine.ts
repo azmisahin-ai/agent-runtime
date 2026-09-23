@@ -19,6 +19,15 @@ export interface MemoryEngineDeps {
   db: Database;
   repository: MemoryRepository;
   events: EventStore;
+  // Current repository truth, used to reconcile memory against the workspace
+  // (spec 03 §7, 12 §13). Optional so memory works without an index.
+  repositoryTruth?: RepositoryTruthProvider;
+}
+
+// A minimal read interface: memory reconciliation needs current content hashes for
+// the files a memory references, not the whole index.
+export interface RepositoryTruthProvider {
+  contentHashFor(projectId: string, path: string): string | null;
 }
 
 // Memory Engine (spec 03). Owns the OBSERVE -> UNDERSTAND -> PERSIST -> RETRIEVE
@@ -164,6 +173,50 @@ export class MemoryEngine {
       });
     }
     return { flushed, failed };
+  }
+
+  // Repository-backed truth reconciliation (spec 03 §7): a memory that references a
+  // repository file is marked UNCERTAIN when the file's current content no longer
+  // matches what the memory was recorded against. It is never silently deleted, and
+  // an UNKNOWN repository state does not invalidate memory (spec 03 §6).
+  reconcileWithRepository(projectId: string): { checked: number; markedUncertain: string[]; unknown: number } {
+    const truth = this.deps.repositoryTruth;
+    if (!truth) return { checked: 0, markedUncertain: [], unknown: 0 };
+
+    const records = this.deps.repository.query({ projectId, statuses: RETRIEVABLE_STATUSES });
+    const markedUncertain: string[] = [];
+    let checked = 0;
+    let unknown = 0;
+
+    for (const record of records) {
+      const evidence = this.deps.repository.listEvidence(record.memoryId);
+      const fileEvidence = evidence.filter(item => item.reference.startsWith('file:') && item.contentHash.length > 0);
+      if (fileEvidence.length === 0) continue;
+      checked += 1;
+
+      let drifted = false;
+      let sawUnknown = false;
+      for (const item of fileEvidence) {
+        const path = item.reference.slice('file:'.length);
+        const current = truth.contentHashFor(projectId, path);
+        if (current === null) { sawUnknown = true; continue; }
+        if (current !== item.contentHash) drifted = true;
+      }
+      if (drifted) {
+        this.deps.repository.setStatus(record.memoryId, 'UNCERTAIN');
+        markedUncertain.push(record.memoryId);
+      } else if (sawUnknown) {
+        unknown += 1;
+      }
+    }
+
+    if (markedUncertain.length > 0 || checked > 0) {
+      this.deps.events.append({
+        projectId, taskId: null, attemptId: null, type: 'MemoryReconciled', source: 'RUNTIME',
+        payload: { checked, markedUncertain, unknown }
+      });
+    }
+    return { checked, markedUncertain, unknown };
   }
 
   // Convert a verified failure into durable FAILURE memory (spec 03 §2).

@@ -25,6 +25,16 @@ export class VerificationRepository {
       startedAt: String(row.started_at), endedAt: String(row.ended_at)
     }));
   }
+
+  listTask(taskId: string): VerificationResult[] {
+    const rows = this.db.raw.prepare('SELECT * FROM verifications WHERE task_id = ? ORDER BY started_at ASC').all(taskId) as Record<string, unknown>[];
+    return rows.map(row => ({
+      verificationId: String(row.verification_id), taskId: String(row.task_id), attemptId: String(row.attempt_id),
+      status: row.status as VerificationStatus, checks: JSON.parse(String(row.checks_json)) as VerificationCheck[],
+      evidence: JSON.parse(String(row.evidence_json)) as Record<string, unknown>,
+      startedAt: String(row.started_at), endedAt: String(row.ended_at)
+    }));
+  }
 }
 
 export class EvaluationRepository {

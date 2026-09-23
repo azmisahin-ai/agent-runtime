@@ -17,6 +17,10 @@ export interface VerifyInput {
   agentClaim: string;
   checks: { name: string; kind: VerificationCheck['kind']; run: VerificationRunnerFn }[];
   allowUnknown?: boolean;
+  // Affected-scope evidence (spec 12 §13): the repository surfaces that a change
+  // can reach. It informs the reviewer and is persisted, but it never turns a
+  // failing or absent check into PASS.
+  affectedScope?: { roots: string[]; direct: string[]; transitive: string[]; tests: string[]; truncated: boolean };
 }
 
 // Verification is independent of agent claims (spec 11 §1-3).
@@ -46,7 +50,7 @@ export class VerificationEngine {
     const result = this.db.transaction(() => {
       const saved = this.verifications.create({
         taskId: input.taskId, attemptId: input.attemptId,
-        status, checks, evidence: { agentClaim: input.agentClaim }, startedAt, endedAt: nowIso()
+        status, checks, evidence: { agentClaim: input.agentClaim, affectedScope: input.affectedScope ?? null }, startedAt, endedAt: nowIso()
       });
       this.events.append({
         projectId: null, taskId: input.taskId, attemptId: input.attemptId,

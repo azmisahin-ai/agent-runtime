@@ -32,4 +32,37 @@ export class GitInspector {
       return false;
     }
   }
+
+  // Changed files since a revision (or the working tree) as ranking inputs. Git
+  // signals are candidates, never automatic relevance (spec 12 §7).
+  changedFiles(against: string | null = null): string[] {
+    try {
+      const args = against ? ['diff', '--name-only', `${against}..HEAD`] : ['diff', '--name-only', 'HEAD'];
+      const output = this.run(args);
+      return output.split('\n').map(line => line.trim()).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  recentCommits(limit = 20): { hash: string; subject: string; author: string; date: string }[] {
+    try {
+      const output = this.run(['log', `-${Math.max(1, Math.min(limit, 200))}`, '--pretty=format:%H%x1f%s%x1f%an%x1f%aI']);
+      return output.split('\n').filter(Boolean).map(line => {
+        const [hash, subject, author, date] = line.split('\x1f');
+        return { hash, subject, author, date };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  diff(against: string | null = null, maxBytes = 200_000): string {
+    try {
+      const args = against ? ['diff', `${against}..HEAD`] : ['diff', 'HEAD'];
+      return this.run(args).slice(0, maxBytes);
+    } catch {
+      return '';
+    }
+  }
 }

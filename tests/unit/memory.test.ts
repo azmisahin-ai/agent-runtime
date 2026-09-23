@@ -185,3 +185,74 @@ test('failure memory is recorded with provenance', () => {
     assert.equal(record.relatedTaskId, task.taskId);
   } finally { f.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
 });
+
+test('repository reconciliation marks drifted memory UNCERTAIN without deleting it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-runtime-memrec-'));
+  const db = new Database(join(dir, 'runtime.db'));
+  db.migrate(repoPath('migrations'));
+  const project = new ProjectRepository(db).create({ name: 'rec', rootPath: dir });
+  const repository = new MemoryRepository(db);
+  const events = new EventStore(db);
+  const engine = new MemoryEngine({ db, repository, events, repositoryTruth: { contentHashFor: () => 'changed-hash' } });
+
+  const result = engine.persist({
+    projectId: project.projectId, scope: 'PROJECT', type: 'PROJECT',
+    content: 'the config file defines three retries', source: 'REPOSITORY', confidence: 'HIGH',
+    relatedFiles: ['src/config.ts'],
+    evidence: [{ reference: 'file:src/config.ts', contentHash: 'original-hash', revision: 'rev1' }]
+  });
+  assert.equal(result.persisted, true);
+
+  const reconciled = engine.reconcileWithRepository(project.projectId);
+  assert.equal(reconciled.checked, 1);
+  assert.deepEqual(reconciled.markedUncertain, [result.memoryId]);
+  assert.equal(repository.get(result.memoryId!)?.status, 'UNCERTAIN');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('repository reconciliation leaves memory ACTIVE when content matches', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-runtime-memrec-'));
+  const db = new Database(join(dir, 'runtime.db'));
+  db.migrate(repoPath('migrations'));
+  const project = new ProjectRepository(db).create({ name: 'rec', rootPath: dir });
+  const repository = new MemoryRepository(db);
+  const events = new EventStore(db);
+  const engine = new MemoryEngine({ db, repository, events, repositoryTruth: { contentHashFor: () => 'same-hash' } });
+
+  const result = engine.persist({
+    projectId: project.projectId, scope: 'PROJECT', type: 'PROJECT',
+    content: 'the config file defines three retries', source: 'REPOSITORY', confidence: 'HIGH',
+    relatedFiles: ['src/config.ts'],
+    evidence: [{ reference: 'file:src/config.ts', contentHash: 'same-hash', revision: 'rev1' }]
+  });
+  const reconciled = engine.reconcileWithRepository(project.projectId);
+  assert.deepEqual(reconciled.markedUncertain, []);
+  assert.equal(repository.get(result.memoryId!)?.status, 'ACTIVE');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('unknown repository state does not invalidate memory (UNKNOWN != stale)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-runtime-memrec-'));
+  const db = new Database(join(dir, 'runtime.db'));
+  db.migrate(repoPath('migrations'));
+  const project = new ProjectRepository(db).create({ name: 'rec', rootPath: dir });
+  const repository = new MemoryRepository(db);
+  const events = new EventStore(db);
+  const engine = new MemoryEngine({ db, repository, events, repositoryTruth: { contentHashFor: () => null } });
+
+  const result = engine.persist({
+    projectId: project.projectId, scope: 'PROJECT', type: 'PROJECT',
+    content: 'the config file defines three retries', source: 'REPOSITORY', confidence: 'HIGH',
+    relatedFiles: ['src/config.ts'],
+    evidence: [{ reference: 'file:src/config.ts', contentHash: 'original-hash', revision: 'rev1' }]
+  });
+  const reconciled = engine.reconcileWithRepository(project.projectId);
+  assert.equal(reconciled.unknown, 1);
+  assert.deepEqual(reconciled.markedUncertain, []);
+  assert.equal(repository.get(result.memoryId!)?.status, 'ACTIVE');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, statSync, type Stats } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 import { canonicalHash } from '../domain/hash.js';
 import type { RepositoryIndexRepository } from '../persistence/repository-index-repository.js';
@@ -19,6 +19,8 @@ export interface ScanOptions {
 export interface ScanResult {
   files: number;
   symbols: number;
+  edges: number;
+  tests: number;
   revision: string | null;
 }
 
@@ -46,8 +48,17 @@ export class RepositoryScanner {
 
     let files = 0;
     let symbols = 0;
+    let edges = 0;
+    let tests = 0;
     try {
-      for (const path of walk(root, root, maxFiles)) {
+      const paths = walk(root, root, maxFiles);
+      const known = new Set(paths);
+      // A fresh full scan replaces structural edges so the graph reflects exactly
+      // one revision (spec 12 §4, §8).
+      this.repository.clearEdges(projectId);
+      this.repository.clearTests(projectId);
+
+      for (const path of paths) {
         const absolute = join(root, path);
         let size: number;
         try { size = statSync(absolute).size; } catch { continue; }
@@ -59,11 +70,13 @@ export class RepositoryScanner {
         files += 1;
         if (language === 'typescript' || language === 'javascript') {
           symbols += this.indexSymbols(projectId, file.fileId, path, content);
+          edges += this.indexEdges(projectId, path, content, known, revision);
+          if (isTestPath(path)) tests += this.indexTests(projectId, path, content, known, revision);
         }
         this.repository.recordEvidence(projectId, `file:${path}`, content, revision);
       }
       this.repository.setIndexState({ projectId, state: 'FRESH', revision, indexedAt: new Date().toISOString(), fileCount: files, symbolCount: symbols });
-      return { files, symbols, revision };
+      return { files, symbols, edges, tests, revision };
     } catch (error) {
       // Indexing failure is explicit: the index is left FAILED, never treated as truth.
       this.repository.setIndexState({ projectId, state: 'FAILED', revision, indexedAt: null, fileCount: files, symbolCount: symbols });
@@ -99,6 +112,51 @@ export class RepositoryScanner {
     }
     return count;
   }
+
+  // DependencyIndexer (spec 12 §4): resolve import/export specifiers to indexed
+  // paths. Unresolved specifiers (packages, dynamic paths) produce no edge, so the
+  // graph only contains claims we can justify from the repository.
+  private indexEdges(projectId: string, path: string, content: string, known: Set<string>, revision: string | null): number {
+    let count = 0;
+    const patterns: { kind: 'IMPORTS' | 'EXPORTS'; regex: RegExp }[] = [
+      { kind: 'IMPORTS', regex: /import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g },
+      { kind: 'EXPORTS', regex: /export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]/g }
+    ];
+    const seen = new Set<string>();
+    for (const pattern of patterns) {
+      for (const match of content.matchAll(pattern.regex)) {
+        const target = resolveSpecifier(path, match[1], known);
+        if (!target) continue;
+        const key = `${pattern.kind}:${target}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        this.repository.addEdge({ projectId, kind: pattern.kind, fromPath: path, toPath: target, revision });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  // TestIndexer (spec 12 §5): link a test file to the implementation it exercises
+  // when the import graph makes that link explicit. No link is invented otherwise.
+  private indexTests(projectId: string, path: string, content: string, known: Set<string>, revision: string | null): number {
+    let count = 0;
+    const targets = new Set<string>();
+    for (const match of content.matchAll(/import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g)) {
+      const target = resolveSpecifier(path, match[1], known);
+      if (target) targets.add(target);
+    }
+    const names = [...content.matchAll(/(?:test|it)\(\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
+    if (targets.size === 0) {
+      this.repository.addTest({ projectId, testPath: path, testName: names[0] ?? null, targetPath: null, revision });
+      return 1;
+    }
+    for (const target of targets) {
+      this.repository.addTest({ projectId, testPath: path, testName: names[0] ?? null, targetPath: target, revision });
+      count += 1;
+    }
+    return count;
+  }
 }
 
 function walk(root: string, current: string, maxFiles: number): string[] {
@@ -111,12 +169,15 @@ function walk(root: string, current: string, maxFiles: number): string[] {
     for (const entry of entries) {
       const absolute = join(dir, entry);
       if (!isInside(root, absolute)) continue;
-      let isDirectory: boolean;
-      try { isDirectory = statSync(absolute).isDirectory(); } catch { continue; }
-      if (isDirectory) {
+      // The project root is a hard boundary (spec 12 §12): symlinks are never
+      // followed, so an index entry cannot resolve to a file outside the root.
+      let info: Stats;
+      try { info = lstatSync(absolute); } catch { continue; }
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) {
         if (SKIP_DIRECTORIES.has(entry)) continue;
         stack.push(absolute);
-      } else {
+      } else if (info.isFile()) {
         found.push(relative(root, absolute).split(sep).join('/'));
         if (found.length >= maxFiles) break;
       }
@@ -127,4 +188,48 @@ function walk(root: string, current: string, maxFiles: number): string[] {
 
 function lineOf(content: string, index: number): number {
   return content.slice(0, index).split('\n').length;
+}
+
+// Resolve a relative import specifier to an indexed path, trying explicit file
+// paths and common source/declaration extensions. Non-relative (package) imports
+// never resolve to a repository file, so no edge is recorded for them.
+const RESOLUTION_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '/index.ts', '/index.js'];
+const DECLARATION_REWRITE: Record<string, string> = { '.js': '.ts', '.mjs': '.ts', '.cjs': '.ts', '.jsx': '.tsx' };
+
+function resolveSpecifier(fromPath: string, specifier: string, known: Set<string>): string | null {
+  if (!specifier.startsWith('.')) return null;
+  const base = posixJoin(posixDirname(fromPath), specifier);
+  if (known.has(base)) return base;
+
+  // TypeScript sources commonly import with a .js extension that maps to a .ts file.
+  const ext = extname(base);
+  if (ext && DECLARATION_REWRITE[ext]) {
+    const rewritten = base.slice(0, -ext.length) + DECLARATION_REWRITE[ext];
+    if (known.has(rewritten)) return rewritten;
+  }
+  for (const suffix of RESOLUTION_EXTENSIONS) {
+    if (known.has(base + suffix)) return base + suffix;
+  }
+  return null;
+}
+
+function posixDirname(path: string): string {
+  const index = path.lastIndexOf('/');
+  return index < 0 ? '' : path.slice(0, index);
+}
+
+function posixJoin(base: string, relative: string): string {
+  const segments = `${base}/${relative}`.split('/');
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') resolved.pop();
+    else resolved.push(segment);
+  }
+  return resolved.join('/');
+}
+
+// A test path is a convention, and conventions are signals, not proof (spec 12 §5).
+function isTestPath(path: string): boolean {
+  return /(^|\/)(__tests__|tests?|spec)(\/|$)/.test(path) || /\.(test|spec)\.[jt]sx?$/.test(path);
 }

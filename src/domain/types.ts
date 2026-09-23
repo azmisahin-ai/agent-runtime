@@ -320,3 +320,39 @@ export interface RepositoryIndexStateRecord {
   symbolCount: number;
   updatedAt: string;
 }
+
+export type RepositoryEdgeKind =
+  | 'IMPORTS' | 'EXPORTS' | 'REFERENCES' | 'CALLS' | 'EXTENDS' | 'IMPLEMENTS' | 'USES_TYPE' | 'TESTS';
+
+// Edges form a graph; cycles are valid (spec 12 §4).
+export interface RepositoryEdgeRecord {
+  edgeId: string;
+  projectId: string;
+  kind: RepositoryEdgeKind;
+  fromPath: string;
+  toPath: string;
+  fromSymbolId: string | null;
+  toSymbolId: string | null;
+  revision: string | null;
+  indexedAt: string;
+}
+
+export interface RepositoryTestRecord {
+  testId: string;
+  projectId: string;
+  testPath: string;
+  testName: string | null;
+  targetPath: string | null;
+  targetSymbolId: string | null;
+  revision: string | null;
+  indexedAt: string;
+}
+
+// Affected scope: what a change to `roots` can plausibly touch (spec 12 §11).
+export interface AffectedScope {
+  roots: string[];
+  direct: string[];
+  transitive: string[];
+  tests: string[];
+  truncated: boolean;
+}

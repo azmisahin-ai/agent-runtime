@@ -26,6 +26,8 @@ Implement durable memory, context snapshots/compaction, complete Tool Engine, Gi
 
 Repository symbols/dependency graph, affected scope analysis, Git intelligence, memory ranking/reconciliation, richer context retrieval and repository evidence freshness.
 
+**Current repository:** M3 is implemented and verified. Delivered: the repository dependency graph (`repository_edges`, IMPORTS/EXPORTS, forward and reverse queries, cycles tolerated), test discovery and test→implementation linking (`repository_tests`), `AffectedScopeAnalyzer` (bounded transitive reverse-dependency closure, truncation reported), combined `RepositorySearch` (filename/stem/path + symbol ranking), richer context retrieval (`ContextRetriever` turning memory and repository results into prioritised, provenanced, staleness-visible sections), Git intelligence (changed files, diff, recent commits, all structured-argv), `RepositoryReconciler` (FRESH/STALE/UNKNOWN freshness, stale index used only as explicit historical evidence), and memory ranking/reconciliation against current repository truth (drifted file-backed memory becomes UNCERTAIN, never deleted; UNKNOWN does not invalidate). The scanner never follows symlinks and the project root remains a hard boundary. See `STATUS.md` and `docs/TRACEABILITY_MATRIX.md`.
+
 ## M4 — Reliability & Security Hardening
 
 Sandboxing, policy engine, secret handling, prompt-injection defenses, persistence failure handling, backend/tool crashes, workspace reconciliation, destructive-operation controls and security adversarial testing.

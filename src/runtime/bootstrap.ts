@@ -17,10 +17,13 @@ import { ToolEngine } from '../tools/tool-engine.js';
 import { builtinTools } from '../tools/builtin-tools.js';
 import { ContextEngine } from '../context/context-engine.js';
 import { Compactor } from '../context/compactor.js';
+import { ContextRetriever } from '../context/context-retriever.js';
 import { VerificationEngine } from '../verification/verification-engine.js';
 import { EvaluationRecorder } from '../evaluation/evaluation-recorder.js';
 import { MemoryEngine } from '../memory/memory-engine.js';
 import { RepositoryScanner } from '../repository/repository-scanner.js';
+import { AffectedScopeAnalyzer, RepositorySearch } from '../repository/repository-search.js';
+import { RepositoryReconciler } from '../repository/repository-reconciler.js';
 import { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { GitInspector } from '../git/git-inspector.js';
 import { OllamaBackend } from '../backends/ollama-backend.js';
@@ -50,6 +53,10 @@ export interface Runtime {
   evaluationRecorder: EvaluationRecorder;
   memoryEngine: MemoryEngine;
   repositoryScanner: RepositoryScanner;
+  repositorySearch: RepositorySearch;
+  affectedScope: AffectedScopeAnalyzer;
+  repositoryReconciler: RepositoryReconciler;
+  contextRetriever: ContextRetriever;
   logger: StructuredLogger;
   metrics: MetricsRegistry;
   orchestrator: RuntimeOrchestrator;
@@ -96,11 +103,22 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   for (const tool of builtinTools()) toolEngine.register(tool);
 
   const contextEngine = new ContextEngine(config.context);
-  const memoryEngine = new MemoryEngine({ db, repository: memories, events });
+  const repositoryScanner = new RepositoryScanner(repositoryIndex);
+  const repositorySearch = new RepositorySearch(repositoryIndex);
+  const affectedScope = new AffectedScopeAnalyzer(repositoryIndex);
+  const repositoryReconciler = new RepositoryReconciler(repositoryIndex, new GitInspector(config.workspaceRoot), affectedScope, repositorySearch);
+  // Memory reconciliation consults current repository truth, not memory itself
+  // (spec 03 §7, 12 §13).
+  const memoryEngine = new MemoryEngine({
+    db, repository: memories, events,
+    repositoryTruth: {
+      contentHashFor: (projectId, path) => repositoryIndex.getFile(projectId, path)?.contentHash ?? null
+    }
+  });
   const compactor = new Compactor({ memoryEngine });
   const verificationEngine = new VerificationEngine(db, verifications, events);
   const evaluationRecorder = new EvaluationRecorder(db, evaluations, events);
-  const repositoryScanner = new RepositoryScanner(repositoryIndex);
+  const contextRetriever = new ContextRetriever({ memoryEngine, repositorySearch });
 
   const backend = new OllamaBackend({
     baseUrl: config.backend.baseUrl,
@@ -111,13 +129,14 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const orchestrator = new RuntimeOrchestrator({
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
-    memoryEngine, logger, metrics
+    memoryEngine, contextRetriever, logger, metrics
   }, backend);
 
   return {
     config, db, projects, tasks, events, taskService, checkpoints, configSnapshots,
     contextSnapshots, toolRuns, sessions, verifications, evaluations, memories, repositoryIndex,
     contextEngine, compactor, toolEngine, verificationEngine, evaluationRecorder, memoryEngine,
-    repositoryScanner, logger, metrics, orchestrator, backend
+    repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics,
+    orchestrator, backend
   };
 }

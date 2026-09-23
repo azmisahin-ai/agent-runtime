@@ -23,6 +23,11 @@ export class ContextSnapshotRepository {
     return row ? this.map(row) : null;
   }
 
+  listTask(taskId: string): ContextSnapshot[] {
+    const rows = this.db.raw.prepare('SELECT * FROM context_snapshots WHERE task_id = ? ORDER BY created_at ASC').all(taskId) as Record<string, unknown>[];
+    return rows.map(row => this.map(row));
+  }
+
   private map(row: Record<string, unknown>): ContextSnapshot {
     return {
       contextSnapshotId: String(row.context_snapshot_id), taskId: String(row.task_id), attemptId: String(row.attempt_id),

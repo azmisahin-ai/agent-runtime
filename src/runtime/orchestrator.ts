@@ -18,6 +18,7 @@ import type { VerificationEngine, VerifyInput } from '../verification/verificati
 import { decideRecovery, type RecoveryOutcome } from '../recovery/recovery-engine.js';
 import type { EvaluationRecorder } from '../evaluation/evaluation-recorder.js';
 import type { MemoryEngine } from '../memory/memory-engine.js';
+import type { ContextRetriever } from '../context/context-retriever.js';
 import { reconcileConfig } from '../config/config-reconciler.js';
 import type { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { GitInspector } from '../git/git-inspector.js';
@@ -38,6 +39,7 @@ export interface OrchestratorDeps {
   verificationEngine: VerificationEngine;
   evaluationRecorder: EvaluationRecorder;
   memoryEngine?: MemoryEngine;
+  contextRetriever?: ContextRetriever;
   logger?: StructuredLogger;
   metrics?: MetricsRegistry;
 }
@@ -129,7 +131,8 @@ export class RuntimeOrchestrator {
       attemptId: attempt.attemptId,
       agentClaim: responseText ?? '',
       checks: verification.checks,
-      allowUnknown: verification.allowUnknown
+      allowUnknown: verification.allowUnknown,
+      affectedScope: verification.affectedScope
     });
 
     // An attempt whose agent execution failed can never be COMPLETED, even if an
@@ -239,7 +242,13 @@ export class RuntimeOrchestrator {
 
   private buildContext(task: Task, attemptId: string, model: string): ContextPack {
     const gitState = new GitInspector(this.deps.config.workspaceRoot).state();
-    const pack = this.deps.contextEngine.build({ task, attemptId, model, gitState });
+    // Retrieval integration (spec 04 §12, 12 §13): memory + repository results become
+    // prioritised context sections. Retrieval is advisory; it cannot alter policy.
+    const observations = this.deps.contextRetriever?.retrieve({
+      projectId: task.projectId,
+      queryText: `${task.title} ${task.description}`.trim()
+    }) ?? [];
+    const pack = this.deps.contextEngine.build({ task, attemptId, model, gitState, observations });
     this.deps.db.transaction(() => {
       this.deps.contextSnapshots.create({
         taskId: task.taskId, attemptId, model, tokenCount: pack.sections.reduce((sum, s) => sum + s.tokenCost, 0),

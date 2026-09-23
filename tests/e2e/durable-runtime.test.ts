@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bootstrap } from '../../src/runtime/bootstrap.js';
@@ -149,5 +149,42 @@ test('repository intelligence indexes the workspace as evidence', () => {
     assert.ok(result.files >= 1);
     assert.equal(f.runtime.repositoryScanner.checkFreshness(f.project.projectId, 'rev1'), 'FRESH');
     assert.equal(f.runtime.repositoryScanner.checkFreshness(f.project.projectId, 'rev2'), 'STALE');
+  } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('retrieved memory and repository context reach the model context pack', async () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.dir, 'helper.ts'), 'export function helper(): number { return 1; }\n');
+    f.runtime.repositoryScanner.index(f.project.projectId, f.dir, 'rev1');
+    f.runtime.memoryEngine.persist({
+      projectId: f.project.projectId, scope: 'PROJECT', type: 'PROCEDURAL',
+      content: 'helper returns one and is used by the runtime', source: 'USER', confidence: 'HIGH'
+    });
+    f.runtime.orchestrator.setBackend(new FakeBackend({ response: { request_id: 'r1', type: 'FINAL', content: 'done' } }), 'fake');
+    await f.runtime.orchestrator.run(f.task.taskId, { checks: passing() });
+
+    const snapshots = f.runtime.contextSnapshots.listTask(f.task.taskId);
+    assert.ok(snapshots.length >= 1);
+    const types = snapshots[0].sections.map(section => section.type);
+    assert.ok(types.includes('MEMORY'));
+    assert.ok(types.includes('REPOSITORY'));
+  } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('affected scope from the repository index is persisted as verification evidence', async () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.dir, 'base.ts'), 'export const base = 1;\n');
+    writeFileSync(join(f.dir, 'consumer.ts'), "import { base } from './base.js';\nexport const c = base;\n");
+    f.runtime.repositoryScanner.index(f.project.projectId, f.dir, 'rev1');
+    const scope = f.runtime.affectedScope.analyze(f.project.projectId, ['base.ts']);
+    assert.ok(scope.direct.includes('consumer.ts'));
+
+    f.runtime.orchestrator.setBackend(new FakeBackend({ response: { request_id: 'r1', type: 'FINAL', content: 'done' } }), 'fake');
+    const result = await f.runtime.orchestrator.run(f.task.taskId, { checks: passing(), affectedScope: scope });
+    assert.equal(result.verification, 'PASS');
+    const verification = f.runtime.verifications.listTask(f.task.taskId)[0];
+    assert.equal(((verification.evidence as Record<string, unknown>).affectedScope as { direct: string[] }).direct.includes('consumer.ts'), true);
   } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
 });

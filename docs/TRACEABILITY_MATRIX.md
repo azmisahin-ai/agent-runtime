@@ -19,7 +19,14 @@
 | Memory persistence gate / no secrets | 03, 15 | `src/memory/memory-policy.ts`, `src/security/secret-redaction.ts` | memory + secret-redaction tests | PASS (M2) |
 | Memory conflict handling | 03 | `src/memory/memory-engine.ts` (polarity contradiction) | memory test (contradictions) | PASS (M2) |
 | Repository evidence/freshness | 12 | `src/repository/repository-scanner.ts`, `src/persistence/repository-index-repository.ts` | `tests/unit/repository-index.test.ts`, e2e index test | PASS (M2) |
-| Repository dependency graph / affected scope | 12 | not implemented | planned (M3) | PLANNED |
+| Repository dependency graph / affected scope | 12 | `src/repository/repository-scanner.ts` (edges+tests), `src/repository/repository-search.ts` (`AffectedScopeAnalyzer`), `src/persistence/repository-index-repository.ts` | `tests/unit/repository-intelligence.test.ts`, adversarial suite | PASS (M3) |
+| Repository search ranking | 12 | `src/repository/repository-search.ts` (`RepositorySearch`) | `tests/unit/repository-intelligence.test.ts` | PASS (M3) |
+| Repository test discovery | 12 | `src/repository/repository-scanner.ts` (`indexTests`), `repository_tests` | `tests/unit/repository-intelligence.test.ts` | PASS (M3) |
+| Repository reconciler / stale index | 12 | `src/repository/repository-reconciler.ts` | `tests/unit/repository-reconciler.test.ts` | PASS (M3) |
+| Git intelligence (changes/diff/commits) | 12 | `src/git/git-inspector.ts` | `tests/unit/repository-reconciler.test.ts` | PASS (M3) |
+| Memory ranking + repository-backed reconciliation | 03, 12 | `src/memory/memory-engine.ts` (`reconcileWithRepository`), `src/memory/memory-policy.ts` | `tests/unit/memory.test.ts` | PASS (M3) |
+| Context retrieval integration | 04, 12 | `src/context/context-retriever.ts`, orchestrator `buildContext` | `tests/unit/context-retriever.test.ts`, e2e | PASS (M3) |
+| Affected scope in verification | 11, 12 | `src/verification/verification-engine.ts`, orchestrator | `tests/e2e/durable-runtime.test.ts` | PASS (M3) |
 | Backend abstraction | 05 | `src/backends/agent-backend.ts` | integration tests | PASS (M1) |
 | Ollama adapter | 05, 07 | `src/backends/ollama-backend.ts` | `tests/integration/ollama-backend.test.ts` | PASS (M1) |
 | Verification independent of claims | 11 | `src/verification/verification-engine.ts` | verification tests | PASS (M1) |
