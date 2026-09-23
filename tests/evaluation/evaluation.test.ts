@@ -184,6 +184,43 @@ test('reporter exposes per-category dimensions without a universal score', async
   });
 });
 
+test('reporter compares two suite runs per dimension with signed deltas, no universal score', async () => {
+  await withStore(async ({ repository, dir }) => {
+    const { runner } = makeRunner(repository, dir);
+    const tasks = [INITIAL_SUITE.tasks[0], INITIAL_SUITE.tasks[1]];
+
+    // Left: both succeed. Right: one succeeds, one fails.
+    await runner.runSuite(
+      { suiteId: 'suite-left', version: '1', tasks },
+      new ScriptedExecutor(() => observation()),
+      context
+    );
+    await runner.runSuite(
+      { suiteId: 'suite-right', version: '1', tasks },
+      new ScriptedExecutor(definition => definition.taskPackId === 'repo-analyze-entrypoints'
+        ? observation({ outcome: 'FAILURE', verification: 'FAIL' })
+        : observation()),
+      context
+    );
+
+    const reporter = new EvaluationReporter(repository);
+    const report = reporter.compare({ label: 'left', suiteId: 'suite-left' }, { label: 'right', suiteId: 'suite-right' });
+
+    assert.equal(report.left_run_count, 2);
+    assert.equal(report.right_run_count, 2);
+    // Right regressed on success and verification; the delta is signed (right - left).
+    assert.equal(report.metrics.success_rate.left, 1);
+    assert.equal(report.metrics.success_rate.right, 0.5);
+    assert.equal(report.metrics.success_rate.delta, -0.5);
+    assert.equal(report.metrics.verification_pass_rate.delta, -0.5);
+    // A dimension equal on both sides has a zero delta, not a missing one.
+    assert.equal(report.metrics.mean_latency_ms.left, report.metrics.mean_latency_ms.right);
+    assert.equal(report.metrics.mean_latency_ms.delta, 0);
+    // Comparison reports labelled metrics; it never collapses to a single score.
+    assert.equal('score' in report, false);
+  });
+});
+
 test('regression runner reports a drop against a baseline and re-derives attribution', async () => {
   await withStore(async ({ repository, dir }) => {
     const { runner } = makeRunner(repository, dir);
