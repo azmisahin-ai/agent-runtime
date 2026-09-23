@@ -1,13 +1,13 @@
 # Agent Runtime — Status
 
-**Last repository checkpoint:** M5 evaluation & benchmarking (suite, runner, metrics, integrity, regression) plus the M4 security remainder (sandbox, destructive-op controls, persistence guard)
-**Current milestone:** M5 complete, M4 remainder complete / V0.1 release candidate next
+**Last repository checkpoint:** V0.1 release candidate assembled (M0–M5 implemented and verified; docs/status/traceability aligned with code)
+**Current milestone:** V0.1 release candidate / live-model benchmark execution pending (requires Ollama)
 
 ## Verified implementation
 
 - Git repository with real history
 - TypeScript/Node foundation
-- SQLite migrations (001 foundation, 002 vertical slice, 003 durable runtime, 004 intelligence layer)
+- SQLite migrations (001 foundation, 002 vertical slice, 003 durable runtime, 004 intelligence layer, 005 hardening, 006 evaluation)
 - Project / Task / Attempt domain model
 - Central task state machine with terminal-state protection
 - Append-only event store
