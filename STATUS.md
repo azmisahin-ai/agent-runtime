@@ -58,6 +58,9 @@
 - Live-model benchmark execution: the M5 harness runs through the real orchestrator, but a live Ollama model is not available in this environment, so suite runs are exercised with a scripted backend
 - Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
 - Multi-provider backends beyond Ollama
+- First-class data classification (spec 15 §12): PUBLIC/PROJECT/SENSITIVE/SECRET is not applied to memory, context, logging and artifacts; only a path-based sensitive-file denylist and secret redaction exist
+- External-agent (ACP/CLI/native) adapters and their runtime-owned vs externally-owned tool documentation (spec 05 §8, 15 §11); capability flags exist on the backend contract and default to `false`
+- Span/trace export (spec 17 §7): structured logs and metrics exist, but there is no distributed trace export
 
 ## Next exact work
 
