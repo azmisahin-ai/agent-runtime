@@ -33,6 +33,7 @@
 | Workspace lock (single writer) | 14 | `src/runtime/workspace-lock.ts`, orchestrator | `tests/adversarial/hardening.test.ts` | PASS (M4) |
 | Security audit trail (hash chain) | 15 | `src/security/security-audit.ts`, `migrations/005_m4_hardening.sql` | `tests/adversarial/hardening.test.ts` | PASS (M4) |
 | Client cannot supply checks / widen policy | 09, 11, 15 | `src/api/runtime-api.ts`, `src/api/server.ts`, `src/tools/policy.ts` | `tests/e2e/runtime-api.test.ts`, `tests/adversarial/hardening.test.ts` | PASS (M4) |
+| API error contract (typed codes + retryable + HTTP mapping) | 09 | `src/api/errors.ts`, `src/api/server.ts` | `tests/e2e/runtime-api.test.ts` (PERMISSION_DENIED, TASK_INVALID_STATE, CONFLICT, INVALID_REQUEST, NOT_FOUND + retryable) | PASS (M4) |
 | Destructive-operation controls (Git deny-by-default) | 15 | `src/security/destructive-operations.ts`, `src/tools/builtin-tools.ts` (`authorizeGit`), `src/config/config.ts` | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
 | Process sandbox (single chokepoint, explicit env, bounded) | 15 | `src/security/process-sandbox.ts`, `src/tools/builtin-tools.ts` (`runCommand`), `src/runtime/bootstrap.ts` | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
 | Persistence-failure handling (durability precondition) | 13 | `src/security/persistence-guard.ts`, `src/runtime/orchestrator.ts` (`assertDurable`) | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
@@ -61,6 +62,18 @@
 | Suite execution through the real runtime | 06 | `src/evaluation/runtime-executor.ts`, orchestrator | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Read-only evaluation API | 06, 09 | `src/api/runtime-api.ts`, `src/api/server.ts` | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Runtime owns continuity | 02, 14 | orchestrator state control + checkpoint/resume | e2e lifecycle tests | PASS (M1) |
+
+## Known gaps
+
+These normative requirements are specified but **not implemented**. They are listed
+here rather than given a PASS row so the matrix cannot be read as complete coverage.
+
+| Requirement | Specification | State |
+|---|---|---|
+| Data classification (PUBLIC/PROJECT/SENSITIVE/SECRET affecting persistence, context, logging, artifacts) | 15 §12 | PLANNED — only a path-based sensitive-file denylist and secret redaction exist; there is no first-class classification applied to memory/context/artifacts |
+| External agent (ACP/CLI/native) integration with runtime-owned vs externally-owned tool documentation | 05 §8, 15 §11 | PLANNED — capability flags (`acp`, `nativeFilesystem`, `nativeTerminal`, `nativeGit`) exist on the backend contract and default to `false`, but no external-agent adapter ships in V0.1 |
+| Distributed traces / causal timing structure | 17 §7 | PARTIAL — structured logs carry correlation IDs and metrics exist; there is no span/trace export. Canonical events are unaffected by a trace outage by construction |
+| Live-model benchmark execution | 06 | PARTIAL — the harness runs through the real orchestrator, but no live model is available in the build environment (Ollama absent); verified against an in-process fake server |
 
 ## Status definitions
 
