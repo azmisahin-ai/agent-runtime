@@ -45,7 +45,14 @@ The model is never the authority for state, security, tool execution or success.
 
 ## Current status
 
-M0 Foundation is implemented. M1 is next. This repository intentionally distinguishes **specified**, **implemented**, **verified** and **planned** work.
+M0–M5 are implemented and verified: foundation, vertical slice, durable runtime,
+intelligence layer, reliability/security hardening (API, locking, idempotency,
+tamper-evident audit, destructive-operation controls, process sandbox,
+persistence-failure handling) and evaluation & benchmarking. The V0.1 release
+candidate is being consolidated; the remaining planned work is live-model
+benchmark execution and stronger OS-level isolation. This repository intentionally
+distinguishes **specified**, **implemented**, **verified** and **planned** work —
+see `STATUS.md` for the exact boundary.
 
 ## Requirements
 

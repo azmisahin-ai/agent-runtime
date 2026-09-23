@@ -42,7 +42,11 @@ This repository implements a model-agnostic coding Agent Runtime / Harness. **Th
 
 ## Current implementation boundary
 
-M0 Foundation is implemented. M1 is next. See `STATUS.md` for the exact state.
+M0–M5 are implemented and verified: foundation, M1 vertical slice, M2 durable
+runtime, M3 intelligence layer, M4 reliability/security hardening (including the
+sandbox, destructive-operation controls and persistence-failure handling) and M5
+evaluation & benchmarking. The V0.1 release candidate is being consolidated. See
+`STATUS.md` for the exact state and `docs/TRACEABILITY_MATRIX.md` for proof.
 
 ## Verification
 
