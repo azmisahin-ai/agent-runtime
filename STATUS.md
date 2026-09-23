@@ -1,51 +1,57 @@
 # Agent Runtime — Status
 
-**Last repository checkpoint:** M0 Foundation  
-**Current milestone:** M0 complete / M1 ready to start
+**Last repository checkpoint:** M1 vertical slice
+**Current milestone:** M1 complete / M2 next
 
 ## Verified implementation
 
 - Git repository with real history
 - TypeScript/Node foundation
-- SQLite initial migration
+- SQLite migrations (001 foundation, 002 vertical slice)
 - Project / Task / Attempt domain model
-- Central task state machine
-- Terminal-state protection
-- Append-only event store foundation
-- Project/Task repositories
-- Transactional TaskService
-- Configuration loader
-- M0 unit tests
-- Architecture specifications 01–17 committed
-- Master roadmap 18 committed
-- Agent handoff instructions committed
-- Traceability matrix committed
+- Central task state machine with terminal-state protection
+- Append-only event store
+- Transactional TaskService and repositories
+- Configuration loader (default-deny network)
+- Backend abstraction (`AgentBackend`) and baseline Ollama adapter
+- Tool Engine: schema validation, default-deny policy, path guard, built-ins (read/list/search/git)
+- Context Engine with budgeting and untrusted-data framing
+- Verification engine (UNKNOWN != PASS)
+- Recovery engine and checkpoint/resume with crash reconciliation
+- Config snapshot, context snapshot, tool-run and evaluation persistence
+- Runtime orchestrator (runtime owns Task state and completion)
+- M0 unit tests + M1 unit/integration/adversarial/e2e tests (57 passing)
+- Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
-- Ollama backend
-- Tool Engine
-- Context Engine
-- Memory Engine
-- Repository Intelligence
-- Verification runner
-- Recovery engine
+- Memory Engine (provenance/supersession)
+- Repository Intelligence evidence/freshness model (only read-only Git inspection exists)
 - Runtime HTTP/SSE API
-- Full security/policy engine
+- Process execution and write tools (policy-gated, currently disabled by default)
 - Full observability/telemetry layer
-- Evaluation harness
+- Full evaluation harness / reproducibility pipeline
+- Multi-provider backends beyond Ollama
 
 ## Next exact work
 
-1. Install dependencies.
-2. Run `npm run check`.
-3. If green, begin M1 from roadmap 18.
-4. Implement backend abstraction before provider-specific execution.
-5. Add baseline Ollama adapter.
-6. Add read/search tools behind Tool Engine.
-7. Add verification and checkpoint/resume.
-8. Update status + traceability after each coherent slice.
+1. Install dependencies if missing.
+2. Run `npm run check` (must be green: build + tests).
+3. Begin M2 from roadmap 18.
+4. Implement the Memory Engine with provenance and supersession.
+5. Implement Repository Intelligence (evidence, freshness) beyond read-only Git inspection.
+6. Add the Runtime HTTP/SSE API surface.
+7. Update status + traceability after each coherent slice.
+
+## Environment notes
+
+- Ollama is **not installed** in the current environment. The Ollama adapter is
+  verified against an in-process fake HTTP server (`tests/integration/ollama-backend.test.ts`),
+  not a live model. Live-model validation requires running Ollama separately.
+- Default network policy is DENY; process execution and filesystem writes are disabled by default.
 
 ## Important interpretation
 
-The repository is now a **self-contained architecture + implementation handoff**, not a claim that V0.1 is already implemented. Specifications describe the target; source/tests prove the current milestone.
+The repository is a self-contained architecture + implementation handoff. Specifications
+describe the target; source and tests prove the current milestone. M0 and the M1 vertical
+slice are implemented and tested; later milestones remain planned.

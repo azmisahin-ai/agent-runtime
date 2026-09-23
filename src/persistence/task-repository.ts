@@ -48,4 +48,38 @@ export class TaskRepository {
     this.db.raw.prepare('UPDATE tasks SET current_attempt_id=?, updated_at=? WHERE task_id=?').run(attempt.attemptId, nowIso(), input.taskId);
     return attempt;
   }
+
+  getAttempt(attemptId: string): Attempt | null {
+    const row = this.db.raw.prepare('SELECT * FROM attempts WHERE attempt_id = ?').get(attemptId) as Record<string, unknown> | undefined;
+    return row ? this.mapAttempt(row) : null;
+  }
+
+  listAttempts(taskId: string): Attempt[] {
+    const rows = this.db.raw.prepare('SELECT * FROM attempts WHERE task_id = ? ORDER BY attempt_number ASC').all(taskId) as Record<string, unknown>[];
+    return rows.map(row => this.mapAttempt(row));
+  }
+
+  countAttempts(taskId: string): number {
+    const row = this.db.raw.prepare('SELECT COUNT(*) AS n FROM attempts WHERE task_id = ?').get(taskId) as { n: number };
+    return Number(row.n);
+  }
+
+  endAttempt(attemptId: string, outcome: Attempt['outcome'], verification: Attempt['verification']): Attempt {
+    const attempt = this.getAttempt(attemptId);
+    if (!attempt) throw new Error(`Attempt not found: ${attemptId}`);
+    if (attempt.endedAt) throw new Error(`Attempt already ended: ${attemptId}`);
+    const endedAt = nowIso();
+    this.db.raw.prepare('UPDATE attempts SET ended_at=?, outcome=?, verification=? WHERE attempt_id=?').run(endedAt, outcome, verification, attemptId);
+    return { ...attempt, endedAt, outcome, verification };
+  }
+
+  private mapAttempt(row: Record<string, unknown>): Attempt {
+    return {
+      attemptId: String(row.attempt_id), taskId: String(row.task_id), attemptNumber: Number(row.attempt_number),
+      backendId: String(row.backend_id), model: String(row.model), startedAt: String(row.started_at),
+      endedAt: row.ended_at ? String(row.ended_at) : null,
+      outcome: row.outcome === null || row.outcome === undefined ? null : row.outcome as Attempt['outcome'],
+      verification: row.verification === null || row.verification === undefined ? null : row.verification as Attempt['verification']
+    };
+  }
 }

@@ -14,6 +14,8 @@ TypeScript/Node project, SQLite/migrations, domain IDs/timestamps, Project/Task/
 
 Implement Task Engine integration, checkpointing, baseline context, Ollama backend, read/search tools, verification, structured events, restart/resume and first end-to-end evaluation.
 
+**Current repository:** M1 is implemented and verified (checkpoint/resume, context engine, Ollama adapter, read/search/git tools, verification, recovery, evaluation, orchestrator). See `STATUS.md` and `docs/TRACEABILITY_MATRIX.md`.
+
 ## M2 — Durable Agent Runtime
 
 Implement durable memory, context snapshots/compaction, complete Tool Engine, Git read tools, terminal execution, verification/recovery semantics, configuration snapshots and observability hardening. Network remains DENY by default.

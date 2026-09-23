@@ -91,9 +91,19 @@ test('migrations are idempotent across reopen', () => {
   const f = fixture();
   try {
     const applied = f.db.migrate(repoPath('migrations'));
-    assert.deepEqual(applied, []);
+    assert.deepEqual(applied, [], 're-running migrations must apply nothing');
     const rows = f.db.raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[];
-    assert.deepEqual(rows.map(r => Number(r.version)), [1]);
+    assert.ok(rows.length >= 2, 'M0 and M1 migrations must both be recorded');
+    assert.deepEqual(rows.map(r => Number(r.version)), [...rows.map(r => Number(r.version))].sort((a, b) => a - b));
+    // Reopening the database and migrating again must not duplicate history.
+    const before = rows.length;
+    f.db.close();
+    const reopened = new Database(join(f.dir, 'runtime.db'));
+    try {
+      reopened.migrate(repoPath('migrations'));
+      const after = reopened.raw.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number };
+      assert.equal(Number(after.n), before);
+    } finally { reopened.close(); }
   } finally {
     f.db.close();
     rmSync(f.dir, { recursive: true, force: true });

@@ -6,6 +6,15 @@ export type AttemptOutcome = 'SUCCESS' | 'FAILURE' | 'TIMEOUT' | 'CANCELLED' | '
 export type VerificationStatus = 'PASS' | 'FAIL' | 'UNKNOWN';
 export type ProjectStatus = 'ACTIVE' | 'ARCHIVED';
 export type EventSource = 'USER' | 'MODEL' | 'RUNTIME' | 'TOOL' | 'BACKEND' | 'SYSTEM';
+export type PermissionLevel = 'READ_ONLY' | 'WORKSPACE_WRITE' | 'PROCESS_EXECUTION' | 'NETWORK_ACCESS' | 'ADMIN';
+export type ToolCapability = 'read_only' | 'filesystem_read' | 'filesystem_write' | 'process_execute' | 'network_access' | 'git_access';
+export type ToolRunStatus =
+  | 'REQUESTED' | 'VALIDATING' | 'VALIDATED' | 'AUTHORIZED' | 'RUNNING'
+  | 'SUCCEEDED' | 'FAILED' | 'TIMEOUT' | 'DENIED' | 'CANCELLED' | 'UNKNOWN';
+export type FailureCategory =
+  | 'MODEL_FAILURE' | 'BACKEND_FAILURE' | 'CONTEXT_FAILURE' | 'MEMORY_FAILURE' | 'TOOL_FAILURE'
+  | 'VERIFICATION_FAILURE' | 'TIMEOUT' | 'PERMISSION_FAILURE' | 'REPOSITORY_FAILURE'
+  | 'PERSISTENCE_FAILURE' | 'UNKNOWN_FAILURE';
 
 export interface Project {
   projectId: string;
@@ -50,4 +59,164 @@ export interface RuntimeEvent {
   timestamp: string;
   source: EventSource;
   payload: Record<string, unknown>;
+}
+
+export interface GitState {
+  head: string | null;
+  branch: string | null;
+  dirty: boolean;
+}
+
+export interface Checkpoint {
+  checkpointId: string;
+  taskId: string;
+  attemptId: string | null;
+  state: TaskState;
+  currentGoal: string;
+  currentStep: string;
+  repositoryRevision: string | null;
+  gitState: GitState;
+  memoryRefs: string[];
+  contextSnapshotId: string | null;
+  pendingAction: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ConfigSnapshot {
+  configSnapshotId: string;
+  taskId: string;
+  attemptId: string;
+  schemaVersion: number;
+  profile: string;
+  effectiveConfig: Record<string, unknown>;
+  effectivePolicy: Record<string, unknown>;
+  backendId: string;
+  model: string;
+  policyVersion: number;
+  configHash: string;
+  createdAt: string;
+}
+
+export interface ToolDefinition {
+  name: string;
+  version: string;
+  description: string;
+  capabilities: ToolCapability[];
+  permission: PermissionLevel;
+  inputSchema: Record<string, unknown>;
+  limits?: { maxBytes?: number; timeoutMs?: number };
+}
+
+export interface ToolRequest {
+  requestId: string;
+  taskId: string;
+  attemptId: string;
+  tool: string;
+  version: string;
+  arguments: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface ToolResult {
+  toolRunId: string;
+  status: ToolRunStatus;
+  output: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface ToolRun {
+  toolRunId: string;
+  taskId: string;
+  attemptId: string;
+  requestId: string;
+  toolName: string;
+  toolVersion: string;
+  arguments: Record<string, unknown>;
+  status: ToolRunStatus;
+  permission: PermissionLevel;
+  output: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+}
+
+export type ContextSectionType =
+  | 'SYSTEM' | 'TASK' | 'STATE' | 'MEMORY' | 'REPOSITORY' | 'FILE' | 'SYMBOL'
+  | 'GIT' | 'TOOL' | 'OBSERVATION' | 'TEST' | 'ERROR' | 'INSTRUCTION';
+
+export interface ContextSection {
+  id: string;
+  type: ContextSectionType;
+  content: string;
+  source: string;
+  priority: 0 | 1 | 2 | 3 | 4;
+  tokenCost: number;
+  relevance: number;
+  timestamp: string;
+  provenance: string;
+}
+
+export interface ContextPack {
+  contextId: string;
+  taskId: string;
+  attemptId: string;
+  createdAt: string;
+  modelContextLimit: number;
+  reservedOutputTokens: number;
+  systemTokens: number;
+  toolSchemaTokens: number;
+  retrievalBudget: number;
+  sections: ContextSection[];
+}
+
+export interface ContextSnapshot {
+  contextSnapshotId: string;
+  taskId: string;
+  attemptId: string;
+  model: string;
+  tokenCount: number;
+  contextHash: string;
+  sections: ContextSection[];
+  retrievalQuery: string;
+  createdAt: string;
+}
+
+export interface VerificationCheck {
+  name: string;
+  kind: 'TEST' | 'BUILD' | 'LINT' | 'TYPECHECK' | 'INVARIANT' | 'REPOSITORY' | 'CUSTOM';
+  status: VerificationStatus;
+  evidence: string;
+}
+
+export interface VerificationResult {
+  verificationId: string;
+  taskId: string;
+  attemptId: string;
+  status: VerificationStatus;
+  checks: VerificationCheck[];
+  evidence: Record<string, unknown>;
+  startedAt: string;
+  endedAt: string;
+}
+
+export interface Evaluation {
+  evaluationId: string;
+  taskId: string;
+  attemptId: string;
+  backendId: string;
+  provider: string;
+  model: string;
+  repositoryRevision: string | null;
+  runtimeConfig: Record<string, unknown>;
+  outcome: AttemptOutcome;
+  verification: VerificationStatus;
+  failureCategory: FailureCategory | null;
+  evidence: Record<string, unknown>;
+  startedAt: string;
+  endedAt: string;
 }

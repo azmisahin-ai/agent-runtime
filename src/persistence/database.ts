@@ -47,5 +47,5 @@ export class Database {
     }
   }
 
-  close(): void { this.raw.close(); }
+  close(): void { if (!this.raw.isOpen) return; this.raw.close(); }
 }
