@@ -63,6 +63,7 @@
 | Read-only evaluation API | 06, 09 | `src/api/runtime-api.ts`, `src/api/server.ts` | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Runtime owns continuity | 02, 14 | orchestrator state control + checkpoint/resume | e2e lifecycle tests | PASS (M1) |
 | Data classification (PUBLIC/PROJECT/SENSITIVE/SECRET across persistence, context, logging, artifacts) | 15 §12 | `src/security/data-classification.ts`; gates in `src/memory/memory-policy.ts`, `src/context/context-engine.ts`, `src/observability/logger.ts`, `src/evaluation/artifact-store.ts` | `tests/adversarial/data-classification.test.ts` | PASS (M4 remainder) |
+| Distributed traces / causal timing structure | 17 §7 | `src/observability/tracer.ts` (parent/child spans), orchestrator (`attempt`, `build_context`, `backend_request`), bootstrap | `tests/unit/tracer.test.ts`, `tests/e2e/vertical-slice.test.ts` | PASS |
 
 ## Known gaps
 
@@ -72,7 +73,6 @@ here rather than given a PASS row so the matrix cannot be read as complete cover
 | Requirement | Specification | State |
 |---|---|---|
 | External agent (ACP/CLI/native) integration with runtime-owned vs externally-owned tool documentation | 05 §8, 15 §11 | PLANNED — capability flags (`acp`, `nativeFilesystem`, `nativeTerminal`, `nativeGit`) exist on the backend contract and default to `false`, but no external-agent adapter ships in V0.1 |
-| Distributed traces / causal timing structure | 17 §7 | PARTIAL — structured logs carry correlation IDs and metrics exist; there is no span/trace export. Canonical events are unaffected by a trace outage by construction |
 | Live-model benchmark execution | 06 | PARTIAL — the harness runs through the real orchestrator, but no live model is available in the build environment (Ollama absent); verified against an in-process fake server |
 
 ## Status definitions

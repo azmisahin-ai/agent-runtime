@@ -139,6 +139,29 @@ test('a model-requested tool cannot escape policy (denied, not executed)', async
   } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
 });
 
+test('an attempt emits a causal trace while canonical state stays in the event store', async () => {
+  const f = fixture();
+  try {
+    f.runtime.orchestrator.setBackend(new FakeBackend({ response: { request_id: 'r1', type: 'FINAL', content: 'done' } }), 'fake');
+    const result = await f.runtime.orchestrator.run(f.task.taskId, { checks: passingChecks() });
+
+    const spans = f.runtime.tracer.completed();
+    const attempt = spans.find(s => s.name === 'attempt');
+    const child = spans.find(s => s.name === 'backend_request');
+    assert.ok(attempt, 'attempt must be traced');
+    assert.ok(child, 'backend request must be traced');
+    assert.equal(child?.traceId, attempt?.traceId);
+    assert.equal(child?.parentSpanId, attempt?.spanId);
+    assert.equal(f.runtime.tracer.openSpanCount(), 0, 'no span may leak open');
+
+    // The trace is timing evidence, not the completion record: the append-only
+    // event store remains the canonical history (spec 17 §7).
+    const attemptEvents = f.runtime.events.listTask(f.task.taskId).filter(e => e.type === 'AttemptCompleted');
+    assert.equal(attemptEvents.length, 1);
+    assert.equal(result.finalState, 'COMPLETED');
+  } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
 test('resume reconciles in-flight tool runs to UNKNOWN', async () => {
   const f = fixture();
   try {

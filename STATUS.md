@@ -50,8 +50,9 @@
 - `IntegrityChecker`: test tampering, verification bypass, side effects and baseline-mismatch detection
 - `EvaluationReporter` (per-category dimensions and suite comparison), `RegressionRunner` (baseline drop detection with re-derived attribution), `ArtifactStore`, `RuntimeEvaluationExecutor` (runs suite tasks through the real orchestrator)
 - Read-only evaluation API under `/api/v1/evaluations` (suite, runs, run detail, report, compare)
+- Traces (spec 17 §7): best-effort parent/child spans for an attempt (`attempt`, `build_context`, `backend_request`) with secret/classification-sanitized attributes; a failing exporter degrades tracing only and canonical state stays in the event store
 - Data classification (spec 15 §12): PUBLIC/PROJECT/SENSITIVE/SECRET derived from content (a declared label cannot downgrade a secret) and enforced per channel — SECRET never enters persistence/context/log/artifact, SENSITIVE never enters durable memory/log/artifact but may serve the current context
-- M0–M5 unit/integration/adversarial/recovery/e2e tests (174 passing)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (179 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
@@ -60,7 +61,6 @@
 - Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
 - Multi-provider backends beyond Ollama
 - External-agent (ACP/CLI/native) adapters and their runtime-owned vs externally-owned tool documentation (spec 05 §8, 15 §11); capability flags exist on the backend contract and default to `false`
-- Span/trace export (spec 17 §7): structured logs and metrics exist, but there is no distributed trace export
 
 ## Next exact work
 

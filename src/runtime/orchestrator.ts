@@ -21,6 +21,7 @@ import type { MemoryEngine } from '../memory/memory-engine.js';
 import type { ContextRetriever } from '../context/context-retriever.js';
 import { reconcileConfig } from '../config/config-reconciler.js';
 import type { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
+import type { Tracer } from '../observability/tracer.js';
 import { GitInspector } from '../git/git-inspector.js';
 import type { RuntimeConfig } from '../config/config.js';
 import type { WorkspaceLock } from './workspace-lock.js';
@@ -44,6 +45,7 @@ export interface OrchestratorDeps {
   contextRetriever?: ContextRetriever;
   logger?: StructuredLogger;
   metrics?: MetricsRegistry;
+  tracer?: Tracer;
   workspaceLock?: WorkspaceLock;
   persistenceGuard?: PersistenceGuard;
 }
@@ -168,17 +170,33 @@ export class RuntimeOrchestrator {
     let failureCategory: FailureCategory | null = null;
     let toolResults: ToolResult[] = [];
 
+    // Tracing is best-effort diagnostics (spec 17 §7): spans describe timing and
+    // causality, while the canonical record is the event store written below. A
+    // tracer that is absent or failing must not change the attempt's outcome.
+    const attemptSpan = this.deps.tracer?.startSpan({
+      name: 'attempt',
+      attributes: { task_id: taskId, attempt_id: attempt.attemptId, backend: this.currentBackendId },
+      context: { task_id: taskId, attempt_id: attempt.attemptId }
+    }) ?? null;
+
     try {
+      const contextSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'build_context', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
+      const context = this.buildContext(tasks.get(taskId)!, attempt.attemptId, config.backend.model);
+      if (contextSpan) this.deps.tracer!.endSpan(contextSpan.spanId, 'OK', { sections: context.sections.length });
+
+      const backendSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'backend_request', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
       response = await this.backend.send({
         task_id: taskId,
         attempt_id: attempt.attemptId,
-        context: this.buildContext(tasks.get(taskId)!, attempt.attemptId, config.backend.model),
+        context,
         response_mode: 'TEXT'
       });
+      if (backendSpan) this.deps.tracer!.endSpan(backendSpan.spanId, 'OK');
       responseText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content ?? '');
       toolResults = this.runRequestedTools(task, attempt, response);
     } catch (error) {
       failureCategory = classify(error);
+      if (attemptSpan) this.deps.tracer!.endSpan(attemptSpan.spanId, 'ERROR', { category: failureCategory });
       events.append({ projectId: task.projectId, taskId, attemptId: attempt.attemptId, type: 'BackendRequestFailed', source: 'BACKEND', payload: { category: failureCategory } });
       this.deps.logger?.error('BACKEND', 'backend request failed', { category: failureCategory }, { task_id: taskId, attempt_id: attempt.attemptId });
       this.deps.metrics?.increment('runtime.backend_failures_total', 1, { category: failureCategory });
@@ -239,6 +257,7 @@ export class RuntimeOrchestrator {
 
     this.deps.metrics?.increment('runtime.attempts_total', 1, { outcome, verification: verificationStatus });
     this.deps.metrics?.observe('runtime.attempt_duration_ms', Date.parse(nowIso()) - Date.parse(startedAt), { backend: this.currentBackendId });
+    if (attemptSpan && failureCategory === null) this.deps.tracer!.endSpan(attemptSpan.spanId, 'OK', { outcome, verification: verificationStatus });
     this.deps.logger?.info('TASK', 'attempt finished', { outcome, verification: verificationStatus, finalState }, { task_id: taskId, attempt_id: attempt.attemptId });
 
     this.deps.evaluationRecorder.record({

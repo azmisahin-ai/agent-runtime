@@ -26,6 +26,7 @@ import { RepositoryScanner } from '../repository/repository-scanner.js';
 import { AffectedScopeAnalyzer, RepositorySearch } from '../repository/repository-search.js';
 import { RepositoryReconciler } from '../repository/repository-reconciler.js';
 import { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
+import { Tracer } from '../observability/tracer.js';
 import { GitInspector } from '../git/git-inspector.js';
 import { OllamaBackend } from '../backends/ollama-backend.js';
 import { RuntimeOrchestrator } from './orchestrator.js';
@@ -73,6 +74,7 @@ export interface Runtime {
   contextRetriever: ContextRetriever;
   logger: StructuredLogger;
   metrics: MetricsRegistry;
+  tracer: Tracer;
   orchestrator: RuntimeOrchestrator;
   backend: OllamaBackend;
   securityAudit: SecurityAudit;
@@ -110,6 +112,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const taskService = new TaskService(db, tasks, events);
   const logger = new StructuredLogger(config.logLevel);
   const metrics = new MetricsRegistry();
+  const tracer = new Tracer();
 
   const git = new GitInspector(config.workspaceRoot);
   const policy = new PolicyEngine({
@@ -181,14 +184,14 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const orchestrator = new RuntimeOrchestrator({
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
-    memoryEngine, contextRetriever, logger, metrics, workspaceLock, persistenceGuard
+    memoryEngine, contextRetriever, logger, metrics, tracer, workspaceLock, persistenceGuard
   }, backend);
 
   const runtime: Runtime = {
     config, db, projects, tasks, events, taskService, checkpoints, configSnapshots,
     contextSnapshots, toolRuns, sessions, verifications, evaluations, memories, repositoryIndex,
     contextEngine, compactor, toolEngine, verificationEngine, evaluationRecorder, memoryEngine,
-    repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics,
+    repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics, tracer,
     orchestrator, backend, securityAudit, workspaceLock,
     destructiveOps, sandbox, persistenceGuard,
     evaluationRuns, evaluationRunner, evaluationReporter, regressionRunner, failureClassifier, integrityChecker, artifactStore,
