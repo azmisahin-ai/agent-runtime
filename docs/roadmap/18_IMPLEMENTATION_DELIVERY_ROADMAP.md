@@ -32,6 +32,8 @@ Repository symbols/dependency graph, affected scope analysis, Git intelligence, 
 
 Sandboxing, policy engine, secret handling, prompt-injection defenses, persistence failure handling, backend/tool crashes, workspace reconciliation, destructive-operation controls and security adversarial testing.
 
+**Current repository:** the Runtime HTTP/SSE API (spec 09), workspace locking, API idempotency, and a tamper-evident security audit trail are implemented and verified. Remaining M4 work: OS-level sandboxing for tool execution, broader persistence-failure injection, and destructive-Git operation controls. See `STATUS.md`.
+
 ## M5 — Evaluation & Benchmarking
 
 20-task initial suite, reproducibility metadata, evaluation artifacts, regression runner, failure attribution and model/backend/context/memory comparisons under controlled conditions.

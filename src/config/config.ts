@@ -16,6 +16,7 @@ export interface RuntimeConfig {
   allowedCommands: string[];
   profile: string;
   policyVersion: number;
+  api: { port: number; host: string; token: string | null };
 }
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -78,6 +79,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     allowNetworkAccess: allowNetwork,
     allowedCommands: (env.AGENT_RUNTIME_ALLOWED_COMMANDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
     profile: env.AGENT_RUNTIME_PROFILE ?? 'local-dev',
-    policyVersion: 1
+    policyVersion: 1,
+    api: {
+      port: Number(env.AGENT_RUNTIME_API_PORT ?? '8787'),
+      host: env.AGENT_RUNTIME_API_HOST ?? '127.0.0.1',
+      // No default token: mutations stay disabled until an operator provides one.
+      token: env.AGENT_RUNTIME_API_TOKEN && env.AGENT_RUNTIME_API_TOKEN.length > 0 ? env.AGENT_RUNTIME_API_TOKEN : null
+    }
   };
 }

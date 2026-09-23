@@ -1,7 +1,7 @@
 # Agent Runtime — Status
 
-**Last repository checkpoint:** M3 intelligence layer
-**Current milestone:** M3 complete / M4 next
+**Last repository checkpoint:** M4 reliability & security hardening (API, locking, audit)
+**Current milestone:** M4 in progress / M5 next
 
 ## Verified implementation
 
@@ -35,14 +35,19 @@
 - Secret redaction across logs, memory and tool output
 - Config snapshot, context snapshot, tool-run and evaluation persistence
 - Runtime orchestrator (runtime owns Task state and completion)
-- M0 + M1 + M2 + M3 unit/integration/adversarial/e2e tests (126 passing)
+- Runtime HTTP+JSON API under `/api/v1` (spec 09): projects/tasks, async idempotency-key-protected start/pause/resume/cancel/retry, run, events, SSE stream with resume-after-sequence, attempts/checkpoints/tools/evaluations, repository status, backend capabilities
+- API authentication (bearer token; mutations disabled without a configured token), typed error contract, DTOs separate from domain entities
+- Client cannot supply verification checks or widen policy; runtime-owned checks are host-configured
+- WorkspaceLock: exclusive single-writer lock with dead-holder reclaim
+- Idempotency store for asynchronous state-changing operations
+- Tamper-evident hash-chained security audit trail
+- M0–M4 unit/integration/adversarial/recovery/e2e tests (143 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
-- Runtime HTTP/SSE API (spec 09) — M4 dev-order item
-- Sandboxing, prompt-injection hardening and destructive-operation controls beyond current guards (M4)
-- Workspace locking (`WorkspaceLock`) for multi-writer concurrency (M4)
+- OS-level sandboxing for tool execution and broader destructive-operation controls (M4 remainder)
+- Persistence-failure injection and backend/tool crash hardening beyond current guards (M4 remainder)
 - Full evaluation harness / reproducibility pipeline and benchmark suite (M5)
 - Multi-provider backends beyond Ollama
 
@@ -50,11 +55,9 @@
 
 1. Install dependencies if missing.
 2. Run `npm run check` (must be green: build + tests).
-3. Continue M4 from roadmap 18 (Reliability & Security Hardening).
-4. Implement the Runtime HTTP/SSE API surface (spec 09) under `/api/v1`.
-5. Add workspace locking and destructive-operation controls.
-6. Add prompt-injection and persistence-failure adversarial tests.
-7. Update status + traceability after each coherent slice.
+3. Finish M4: OS-level tool sandboxing, persistence-failure injection, destructive-Git controls.
+4. Then begin M5 (Evaluation & Benchmarking) from roadmap 18.
+5. Update status + traceability after each coherent slice.
 
 ## Environment notes
 
@@ -70,5 +73,5 @@
 
 The repository is a self-contained architecture + implementation handoff. Specifications
 describe the target; source and tests prove the current milestone. M0, the M1 vertical
-slice, M2 durable runtime and M3 intelligence layer are implemented and tested; later
-milestones remain planned.
+slice, M2 durable runtime, M3 intelligence layer, and the M4 API/locking/audit slice are
+implemented and tested; the remainder of M4 and later milestones remain planned.

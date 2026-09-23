@@ -23,6 +23,7 @@ import { reconcileConfig } from '../config/config-reconciler.js';
 import type { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { GitInspector } from '../git/git-inspector.js';
 import type { RuntimeConfig } from '../config/config.js';
+import type { WorkspaceLock } from './workspace-lock.js';
 
 export interface OrchestratorDeps {
   db: Database;
@@ -42,7 +43,12 @@ export interface OrchestratorDeps {
   contextRetriever?: ContextRetriever;
   logger?: StructuredLogger;
   metrics?: MetricsRegistry;
+  workspaceLock?: WorkspaceLock;
 }
+
+// Runtime-owned verification checks. Clients cannot supply checks (spec 11 §2, 15
+// §10); the host process decides what evidence establishes success for a task.
+export type VerificationCheckProvider = (task: Task) => VerifyInput['checks'];
 
 export interface RunResult {
   taskId: string;
@@ -62,10 +68,23 @@ export interface RunResult {
 export class RuntimeOrchestrator {
   private currentBackend: AgentBackend;
   private currentBackendId: string;
+  // Host-provided checks for tasks run through the public API surface. When unset,
+  // API-driven attempts are verified with no checks and therefore cannot pass.
+  private verificationChecks: VerificationCheckProvider = () => [];
 
   constructor(private readonly deps: OrchestratorDeps, backend: AgentBackend, backendId = 'ollama') {
     this.currentBackend = backend;
     this.currentBackendId = backendId;
+  }
+
+  // The host process declares how attempts are verified. This is an operator
+  // control, not a client control (spec 11 §2, 15 §10).
+  setVerificationChecks(provider: VerificationCheckProvider): void {
+    this.verificationChecks = provider;
+  }
+
+  verificationChecksFor(task: Task): VerifyInput['checks'] {
+    return this.verificationChecks(task);
   }
 
   // Backend switching is explicit and audited (spec 05 §10, 14 §6).
@@ -77,6 +96,23 @@ export class RuntimeOrchestrator {
   get backend(): AgentBackend { return this.currentBackend; }
 
   async run(taskId: string, verification: Omit<VerifyInput, 'taskId' | 'attemptId' | 'agentClaim'>, repositoryRevision: string | null = null): Promise<RunResult> {
+    // At most one attempt may write a workspace at a time (roadmap M4). The lock is
+    // held for the whole attempt and always released, including on failure.
+    const lock = this.deps.workspaceLock;
+    if (lock) {
+      const acquisition = lock.acquire();
+      if (!acquisition.acquired) {
+        throw new Error(`Workspace is locked by another runtime (holder pid ${acquisition.holderPid ?? 'unknown'})`);
+      }
+    }
+    try {
+      return await this.runAttempt(taskId, verification, repositoryRevision);
+    } finally {
+      lock?.release();
+    }
+  }
+
+  private async runAttempt(taskId: string, verification: Omit<VerifyInput, 'taskId' | 'attemptId' | 'agentClaim'>, repositoryRevision: string | null = null): Promise<RunResult> {
     const { db, config, tasks, events } = this.deps;
     const task = tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);

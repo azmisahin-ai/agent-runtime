@@ -27,6 +27,12 @@
 | Memory ranking + repository-backed reconciliation | 03, 12 | `src/memory/memory-engine.ts` (`reconcileWithRepository`), `src/memory/memory-policy.ts` | `tests/unit/memory.test.ts` | PASS (M3) |
 | Context retrieval integration | 04, 12 | `src/context/context-retriever.ts`, orchestrator `buildContext` | `tests/unit/context-retriever.test.ts`, e2e | PASS (M3) |
 | Affected scope in verification | 11, 12 | `src/verification/verification-engine.ts`, orchestrator | `tests/e2e/durable-runtime.test.ts` | PASS (M3) |
+| Runtime HTTP+JSON API | 09 | `src/api/server.ts`, `src/api/runtime-api.ts`, `src/api/dto.ts`, `src/api/errors.ts` | `tests/e2e/runtime-api.test.ts` | PASS (M4) |
+| API idempotency | 09 | `src/persistence/idempotency-store.ts`, `migrations/005_m4_hardening.sql` | `tests/e2e/runtime-api.test.ts` | PASS (M4) |
+| SSE event streaming / resume | 09 | `src/api/server.ts` (`streamEvents`) | `tests/e2e/runtime-api.test.ts` | PASS (M4) |
+| Workspace lock (single writer) | 14 | `src/runtime/workspace-lock.ts`, orchestrator | `tests/adversarial/hardening.test.ts` | PASS (M4) |
+| Security audit trail (hash chain) | 15 | `src/security/security-audit.ts`, `migrations/005_m4_hardening.sql` | `tests/adversarial/hardening.test.ts` | PASS (M4) |
+| Client cannot supply checks / widen policy | 09, 11, 15 | `src/api/runtime-api.ts`, `src/api/server.ts`, `src/tools/policy.ts` | `tests/e2e/runtime-api.test.ts`, `tests/adversarial/hardening.test.ts` | PASS (M4) |
 | Backend abstraction | 05 | `src/backends/agent-backend.ts` | integration tests | PASS (M1) |
 | Ollama adapter | 05, 07 | `src/backends/ollama-backend.ts` | `tests/integration/ollama-backend.test.ts` | PASS (M1) |
 | Verification independent of claims | 11 | `src/verification/verification-engine.ts` | verification tests | PASS (M1) |

@@ -28,6 +28,9 @@ import { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { GitInspector } from '../git/git-inspector.js';
 import { OllamaBackend } from '../backends/ollama-backend.js';
 import { RuntimeOrchestrator } from './orchestrator.js';
+import { WorkspaceLock } from './workspace-lock.js';
+import { SecurityAudit } from '../security/security-audit.js';
+import { RuntimeApiService } from '../api/runtime-api.js';
 import { repoPath } from './paths.js';
 
 export interface Runtime {
@@ -61,6 +64,9 @@ export interface Runtime {
   metrics: MetricsRegistry;
   orchestrator: RuntimeOrchestrator;
   backend: OllamaBackend;
+  securityAudit: SecurityAudit;
+  workspaceLock: WorkspaceLock;
+  api: RuntimeApiService;
 }
 
 export function bootstrap(env: Record<string, string | undefined> = process.env): Runtime {
@@ -126,17 +132,23 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     requestTimeoutMs: config.backend.requestTimeoutMs
   });
 
+  const securityAudit = new SecurityAudit(db);
+  const workspaceLock = new WorkspaceLock(config.workspaceRoot);
+
   const orchestrator = new RuntimeOrchestrator({
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
-    memoryEngine, contextRetriever, logger, metrics
+    memoryEngine, contextRetriever, logger, metrics, workspaceLock
   }, backend);
 
-  return {
+  const runtime: Runtime = {
     config, db, projects, tasks, events, taskService, checkpoints, configSnapshots,
     contextSnapshots, toolRuns, sessions, verifications, evaluations, memories, repositoryIndex,
     contextEngine, compactor, toolEngine, verificationEngine, evaluationRecorder, memoryEngine,
     repositoryScanner, repositorySearch, affectedScope, repositoryReconciler, contextRetriever, logger, metrics,
-    orchestrator, backend
+    orchestrator, backend, securityAudit, workspaceLock,
+    api: undefined as unknown as RuntimeApiService
   };
+  runtime.api = new RuntimeApiService(runtime);
+  return runtime;
 }
