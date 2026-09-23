@@ -2,6 +2,7 @@ import type {
   MemoryCandidate, MemoryConfidence, MemoryRecord, MemoryScope, MemoryStatus, MemoryType
 } from '../domain/types.js';
 import { containsSecret } from '../security/secret-redaction.js';
+import { canEgress, classifyData } from '../security/data-classification.js';
 
 export interface PersistenceDecision {
   persist: boolean;
@@ -21,9 +22,18 @@ export function shouldPersist(candidate: MemoryCandidate, options: PersistenceGa
   const minLength = options.minContentLength ?? 8;
   const content = candidate.content?.trim() ?? '';
 
-  // Secrets never enter durable memory (spec 03 §11).
+  // Secrets never enter durable memory (spec 03 §11). Checked before the broader
+  // classification gate so a secret is reported as a secret, its own boundary.
   if (containsSecret(candidate.content ?? '')) {
     return { persist: false, reason: 'candidate contains a secret and must not be persisted' };
+  }
+  // A classification is derived from the content, not trusted from the caller.
+  // SENSITIVE-but-not-secret content is kept local only and refused durable
+  // memory (spec 15 §12).
+  const classification = classifyData({ content: candidate.content, path: candidate.relatedFiles?.[0] ?? null });
+  const persistDecision = canEgress('persist', classification);
+  if (!persistDecision.allowed) {
+    return { persist: false, reason: `candidate is classified ${classification}: ${persistDecision.reason}` };
   }
   if (!DURABLE_TYPES.includes(candidate.type)) {
     return { persist: false, reason: `memory type ${candidate.type} is not durable` };

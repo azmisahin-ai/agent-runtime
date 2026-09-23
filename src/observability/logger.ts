@@ -1,4 +1,5 @@
 import { redactValue } from '../security/secret-redaction.js';
+import { canEgress, classifyData, type DataClassification } from '../security/data-classification.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -45,15 +46,20 @@ export class StructuredLogger {
 
   constructor(private readonly level: LogLevel = 'info', private readonly sink: (record: LogRecord) => void = () => {}) {}
 
-  log(level: LogLevel, category: string, message: string, data?: Record<string, unknown>, context: CorrelationContext = {}): void {
+  log(level: LogLevel, category: string, message: string, data?: Record<string, unknown>, context: CorrelationContext = {}, classification?: DataClassification): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.level]) return;
+    // Classification is derived from the content unless the caller states one
+    // (spec 15 §12). A datum the log channel may not carry is withheld, never
+    // silently rewritten: the record still exists, its payload does not.
+    const effective = classification ?? classifyData({ content: `${message} ${data ? JSON.stringify(data) : ''}` });
+    const withhold = !canEgress('log', effective).allowed;
     // Secret redaction is mandatory before any log record leaves this method (spec 17 §5).
     const record: LogRecord = {
       timestamp: new Date().toISOString(),
       level,
       category,
-      message: redactValue(message),
-      data: data ? redactValue(data) : undefined,
+      message: withhold ? `[WITHHELD:${effective}]` : redactValue(message),
+      data: withhold ? { withheld: effective } : (data ? redactValue(data) : undefined),
       ...context
     };
     this.records.push(record);

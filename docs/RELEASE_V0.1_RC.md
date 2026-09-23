@@ -22,7 +22,7 @@ authority for Task state, policy, tool execution or success.
 
 ## Evidence
 
-- Full test suite: **166/166 passing** (`npm run check`), spanning unit, integration,
+- Full test suite: **174/174 passing** (`npm run check`), spanning unit, integration,
   adversarial, recovery, evaluation and end-to-end tests.
 - Every normative requirement row in `docs/TRACEABILITY_MATRIX.md` is marked PASS with
   a linked implementation and test.
@@ -38,6 +38,7 @@ These are not implemented and are not claimed as complete:
   environment. The Ollama adapter is verified against an in-process fake HTTP server
   (`tests/integration/ollama-backend.test.ts`). A live run requires Ollama running
   separately.
+- **External-agent adapters and span/trace export** are specified but not implemented; see `docs/TRACEABILITY_MATRIX.md`.
 - **Kernel-enforced isolation.** The in-process `ProcessSandbox` controls cwd,
   environment, timeout and output bounds and never inherits ambient credentials, but
   it is not a container/seccomp/namespace jail.

@@ -1,6 +1,7 @@
 import type { ContextPack, ContextSection, ContextSectionType, Task, GitState } from '../domain/types.js';
 import { newId, nowIso } from '../domain/id.js';
 import { canonicalHash } from '../domain/hash.js';
+import { canEgress, classifyData } from '../security/data-classification.js';
 
 export interface ContextEngineOptions {
   modelContextLimit: number;
@@ -74,6 +75,10 @@ export class ContextEngine {
     let used = 0;
     const kept: ContextSection[] = [];
     for (const candidate of ordered) {
+      // A section classified SECRET must never be placed in model context, even if
+      // it is mandatory by priority: the classification boundary outranks budget
+      // and priority (spec 15 §12). It is dropped, never silently sanitized.
+      if (!canEgress('context', classifyData({ content: candidate.content, path: candidate.source })).allowed) continue;
       if (candidate.priority <= 1) { kept.push(candidate); used += candidate.tokenCost; continue; }
       if (used + candidate.tokenCost <= retrievalBudget) { kept.push(candidate); used += candidate.tokenCost; }
     }

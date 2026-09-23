@@ -3,10 +3,12 @@ import { join, resolve } from 'node:path';
 import { canonicalHash } from '../domain/hash.js';
 import type { EvaluationRunRepository } from '../persistence/evaluation-run-repository.js';
 import { nowIso } from '../domain/id.js';
+import { canEgress, classifyData } from '../security/data-classification.js';
 
 // Artifact store for evaluation evidence (spec 06 §10). Artifacts are written into
 // a dedicated directory and recorded by content hash so their integrity is
-// checkable later. Secrets are never written here; callers pass redacted content.
+// checkable later. Content is classified before it reaches disk: SENSITIVE and
+// SECRET content must not become an evaluation artifact (spec 15 §12).
 export class ArtifactStore {
   constructor(
     private readonly repository: EvaluationRunRepository,
@@ -16,6 +18,12 @@ export class ArtifactStore {
   }
 
   write(runId: string, kind: string, name: string, content: string): { artifactId: string; reference: string; contentHash: string; size: number } {
+    // Artifacts are shipped as evaluation evidence and may leave the workspace, so
+    // the artifact channel refuses SENSITIVE/SECRET content rather than storing it.
+    const classification = classifyData({ content });
+    if (!canEgress('artifact', classification).allowed) {
+      throw new Error(`artifact refused: ${classification} content must not enter evaluation artifacts`);
+    }
     const safeRun = runId.replace(/[^A-Za-z0-9_.-]/g, '_');
     const safeName = name.replace(/[^A-Za-z0-9_.-]/g, '_');
     const dir = join(this.rootDir, safeRun);
