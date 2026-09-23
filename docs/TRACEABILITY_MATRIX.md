@@ -56,7 +56,7 @@
 | Benchmark integrity / tamper detection | 06 | `src/evaluation/integrity.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
 | Evaluation artifacts (content-addressed) | 06 | `src/evaluation/artifact-store.ts`, `evaluation_artifacts` | `tests/evaluation/evaluation.test.ts`, e2e | PASS (M5) |
 | Immutable evaluation evidence (append-only) | 06 | `src/persistence/evaluation-run-repository.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
-| Evaluation reporting / comparison (no universal score) | 06 | `src/evaluation/reporter.ts` | `tests/evaluation/evaluation.test.ts`, e2e | PASS (M5) |
+| Evaluation reporting / comparison (no universal score) | 06 | `src/evaluation/reporter.ts` | `tests/evaluation/evaluation.test.ts` (per-category summary, signed per-dimension deltas), `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Regression runner | 06 | `src/evaluation/regression-runner.ts` | `tests/evaluation/evaluation.test.ts` | PASS (M5) |
 | Suite execution through the real runtime | 06 | `src/evaluation/runtime-executor.ts`, orchestrator | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |
 | Read-only evaluation API | 06, 09 | `src/api/runtime-api.ts`, `src/api/server.ts` | `tests/e2e/evaluation-api.test.ts` | PASS (M5) |

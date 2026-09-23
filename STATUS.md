@@ -50,7 +50,7 @@
 - `IntegrityChecker`: test tampering, verification bypass, side effects and baseline-mismatch detection
 - `EvaluationReporter` (per-category dimensions and suite comparison), `RegressionRunner` (baseline drop detection with re-derived attribution), `ArtifactStore`, `RuntimeEvaluationExecutor` (runs suite tasks through the real orchestrator)
 - Read-only evaluation API under `/api/v1/evaluations` (suite, runs, run detail, report, compare)
-- M0–M5 unit/integration/adversarial/recovery/e2e tests (165 passing)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (166 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
