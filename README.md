@@ -49,8 +49,10 @@ M0–M5 are implemented and verified: foundation, vertical slice, durable runtim
 intelligence layer, reliability/security hardening (API, locking, idempotency,
 tamper-evident audit, destructive-operation controls, process sandbox,
 persistence-failure handling) and evaluation & benchmarking. The V0.1 release
-candidate is being consolidated; the remaining planned work is live-model
-benchmark execution and stronger OS-level isolation. This repository intentionally
+candidate is assembled; the remaining gaps are live-model benchmark
+execution, stronger OS-level isolation, first-class data classification,
+external-agent adapters and span/trace export (see
+`docs/TRACEABILITY_MATRIX.md`). This repository intentionally
 distinguishes **specified**, **implemented**, **verified** and **planned** work —
 see `STATUS.md` for the exact boundary.
 
