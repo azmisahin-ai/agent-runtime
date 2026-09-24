@@ -32,6 +32,23 @@ function verify(f: ReturnType<typeof fixture>, checks: Parameters<VerificationEn
   return f.engine.verify({ taskId: f.task.taskId, attemptId: f.attempt.attemptId, agentClaim: 'claim', checks, allowUnknown });
 }
 
+test('a check receives the agent claim so intent checks can inspect the answer', () => {
+  const f = fixture();
+  try {
+    let seen: string | null = null;
+    const result = f.engine.verify({
+      taskId: f.task.taskId, attemptId: f.attempt.attemptId, agentClaim: 'I fixed src/math.js',
+      checks: [{ name: 'reads-claim', kind: 'INVARIANT', run: claim => { seen = claim; return { status: 'PASS', evidence: 'saw the claim' }; } }],
+      allowUnknown: false
+    });
+    assert.equal(seen, 'I fixed src/math.js');
+    assert.equal(result.status, 'PASS');
+  } finally {
+    f.db.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
 test('UNKNOWN is never PASS when allow_unknown is false', () => {
   const f = fixture();
   try {

@@ -67,14 +67,18 @@
 
 1. Install dependencies if missing.
 2. Run `npm run check` (must be green: build + tests).
-3. Begin V0.1 release-candidate consolidation (spec 17): documentation, status and traceability agreement; live-model benchmark run when Ollama is available.
-4. Update status + traceability after each coherent slice.
+3. Record a live-model benchmark result under the per-task checks once a live model
+   server is available again (the checks themselves are implemented and verified).
+4. Strengthen isolation beyond the in-process sandbox and add backends beyond
+   Ollama and CLI.
+5. Update status + traceability after each coherent slice.
 
 ## Environment notes
 
-- Ollama is **not installed** in the current environment. The Ollama adapter is
-  verified against an in-process fake HTTP server (`tests/integration/ollama-backend.test.ts`),
-  not a live model. Live-model validation requires running Ollama separately.
+- A live Ollama server with `qwen2.5-coder:1.5b` was available and used for the
+  live-model benchmark in `docs/BENCHMARK.md`. The in-process fake HTTP server test
+  (`tests/integration/ollama-backend.test.ts`) still covers the adapter without a
+  live model, so CI does not depend on Ollama being installed.
 - Default network policy is DENY; process execution and filesystem writes are disabled
   by default and widen only via explicit flags
   (`AGENT_RUNTIME_ALLOW_PROCESS`, `AGENT_RUNTIME_ALLOW_NETWORK`,
@@ -90,4 +94,8 @@ describe the target; source and tests prove the current milestone. M0, the M1 ve
 slice, M2 durable runtime, M3 intelligence layer, M4 (API/locking/audit plus the security
 remainder: sandbox, destructive-operation controls, persistence-failure handling), and
 the M5 evaluation & benchmarking layer are implemented and tested. The V0.1
-release-candidate consolidation and live-model benchmark execution remain planned.
+release-candidate consolidation and a live-model benchmark execution are complete.
+The benchmark now verifies each task pack against its declared `verificationIntent`
+and honours the declared `EPHEMERAL_COPY` isolation, so it no longer reports a single
+mechanics invariant as task success; it still does not prove a model solved a real
+task on an arbitrary repository (see `docs/BENCHMARK.md`).

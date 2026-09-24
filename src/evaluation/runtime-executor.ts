@@ -16,10 +16,15 @@ export class RuntimeEvaluationExecutor implements EvaluationExecutor {
     private readonly runtime: Runtime,
     private readonly workspaceRoot: string,
     // Host-declared verification. Only the host may decide what proves success.
-    private readonly checksFor: (definition: EvaluationTaskDefinition) => { name: string; kind: 'TEST' | 'BUILD' | 'LINT' | 'TYPECHECK' | 'INVARIANT' | 'CUSTOM'; run: () => { status: 'PASS' | 'FAIL' | 'UNKNOWN'; evidence: string } }[]
+    private readonly checksFor: (definition: EvaluationTaskDefinition) => { name: string; kind: 'TEST' | 'BUILD' | 'LINT' | 'TYPECHECK' | 'INVARIANT' | 'CUSTOM'; run: (agentClaim: string) => { status: 'PASS' | 'FAIL' | 'UNKNOWN'; evidence: string } }[],
+    // Honours the suite's declared per-task isolation (`EPHEMERAL_COPY`): the host
+    // resets the workspace to a pristine baseline before each task so one task
+    // cannot inherit another's changes (spec 06 §6-7).
+    private readonly resetWorkspace?: () => void
   ) {}
 
   async execute(definition: EvaluationTaskDefinition, _context: { runId: string }): Promise<ExecutionObservation> {
+    this.resetWorkspace?.();
     const projects = new ProjectRepository(this.runtime.db);
     const project = projects.create({ name: `eval:${definition.taskPackId}`, rootPath: this.workspaceRoot });
     const task = this.runtime.taskService.create(project.projectId, definition.title, definition.description);

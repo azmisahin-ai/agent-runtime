@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { bootstrap } from '../src/runtime/bootstrap.js';
 import { INITIAL_SUITE } from '../src/evaluation/suite.js';
 import { RuntimeEvaluationExecutor } from '../src/evaluation/runtime-executor.js';
+import { checksForSuiteTask } from '../src/evaluation/suite-checks.js';
 
 // Drives the 20-task initial suite through the real runtime against a live model
 // server (spec 06). Verification here is deliberately honest: it only asserts what
@@ -28,21 +29,26 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-// Seed a tiny workspace so analysis tasks have something real to read. The
-// workspace is disposable; the runtime treats it as untrusted data. It is a real
-// git repository so evaluation runs can pin a repository revision and stay
-// reproducible (spec 06 §7).
+// Seed a workspace whose baseline contains the defects the suite's BUG_FIX tasks
+// describe, so a passing check means the defect was actually repaired rather than
+// that the seed was already correct. It is a real git repository so evaluation
+// runs can pin a repository revision and stay reproducible (spec 06 §7). The
+// workspace is disposable and the runtime treats its contents as untrusted data.
 function seedWorkspace(root: string): void {
   mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'math.js'), 'function add(a, b) {\n  return a + b;\n}\n\nmodule.exports = { add };\n');
+  mkdirSync(join(root, 'tests'), { recursive: true });
+  writeFileSync(join(root, 'src', 'math.js'), 'function add(a, b) {\n  return a + b + 1; // off-by-one\n}\n\nmodule.exports = { add };\n');
   writeFileSync(join(root, 'src', 'parse.js'), 'function parse(text) {\n  return text.split(",");\n}\n\nmodule.exports = { parse };\n');
+  writeFileSync(join(root, 'src', 'retry.js'), 'function withRetry(fn, attempts) {\n  for (let i = 0; i < attempts; i += 1) {\n    fn();\n  }\n}\n\nmodule.exports = { withRetry };\n');
+  writeFileSync(join(root, 'src', 'state.js'), 'function transition(current, next) {\n  return next;\n}\n\nmodule.exports = { transition };\n');
+  writeFileSync(join(root, 'tests', 'math.test.js'), 'const { add } = require("../src/math.js");\nif (add(2, 3) !== 5) throw new Error("add is wrong");\n');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'benchmark-workspace', version: '1.0.0', main: 'src/math.js' }, null, 2));
   const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
   git('init', '-q');
   git('config', 'user.email', 'benchmark@local');
   git('config', 'user.name', 'benchmark');
   git('add', '.');
-  git('commit', '-q', '-m', 'benchmark workspace');
+  git('commit', '-q', '-m', 'benchmark workspace with known defects');
 }
 
 // Group runs by category for a per-category read of the benchmark. Reporting is a
@@ -90,19 +96,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // The only thing the runtime can prove here is its own mechanics: an attempt was
-  // opened, a real model answered, and the attempt closed with a terminal
-  // observation. These 20 task packs describe bug-fix/feature work whose real proof
-  // would need the corresponding task workspace, which does not exist in this
-  // harness. So the check is named for exactly what it measures and the summary
-  // states the scope, rather than dressing a mechanics check up as task success.
-  const executor = new RuntimeEvaluationExecutor(runtime, workspace, () => [
-    {
-      name: 'runtime-completed-a-real-model-attempt',
-      kind: 'INVARIANT' as const,
-      run: () => ({ status: 'PASS' as const, evidence: 'attempt reached a terminal observation with a live model response' })
+  // Each task pack is verified against the intent it declares. A check that cannot
+  // decide returns UNKNOWN, which is never PASS, so an unscored task is reported as
+  // unscored rather than as a pass (spec 06 §6, 11 §1-3).
+  const executor = new RuntimeEvaluationExecutor(
+    runtime,
+    workspace,
+    definition => checksForSuiteTask(definition, workspace),
+    // Honours the declared EPHEMERAL_COPY isolation: reset to the pristine baseline
+    // commit before each task so no task inherits another's changes.
+    () => {
+      spawnSync('git', ['checkout', '--', '.'], { cwd: workspace, shell: false });
+      spawnSync('git', ['clean', '-fd'], { cwd: workspace, shell: false });
     }
-  ]);
+  );
 
   const suite = args.limit ? { ...INITIAL_SUITE, tasks: INITIAL_SUITE.tasks.slice(0, args.limit) } : INITIAL_SUITE;
   const startedAt = Date.now();
@@ -114,14 +121,14 @@ async function main(): Promise<void> {
     contextConfig: { modelContextLimit: 4096 },
     memorySnapshot: {},
     toolConfig: {},
-    verificationConfig: { checks: ['attempt-produced-a-response'] }
+    verificationConfig: { checks: ['per-task verificationIntent'] }
   });
   const elapsedMs = Date.now() - startedAt;
 
   const report = {
     suite_id: result.suiteId,
     run_count: result.aggregates.run_count,
-    scope_note: 'Live-model mechanics run: each task opens a real attempt against a live model server. It measures runtime mechanics and model latency/behaviour, not whether the task work was correctly performed, which would require per-task task workspaces.',
+    scope_note: 'Live-model run over a seeded workspace with known defects. FIX/ANALYSIS tasks are checked against their declared verificationIntent; UNKNOWN means the host had no check to decide. It still does not prove a model solved a real task on an arbitrary repository.',
     overall: result.aggregates,
     by_category: groupByCategory(result.runs.map(item => item.run)),
     runs: result.runs.map(item => ({
@@ -131,7 +138,12 @@ async function main(): Promise<void> {
       verification: item.run.verification,
       failure_category: item.run.failureCategory,
       latency_ms: item.observations.latencyMs,
-      reproducible: item.run.reproducible
+      reproducible: item.run.reproducible,
+      checks: (() => {
+        const taskId = item.run.evidence['task_id'];
+        if (typeof taskId !== 'string') return [];
+        return (runtime.verifications.listTask(taskId).at(-1)?.checks ?? []).map(check => ({ name: check.name, status: check.status }));
+      })()
     }))
   };
   mkdirSync(args.outDir, { recursive: true });

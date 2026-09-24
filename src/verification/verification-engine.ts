@@ -9,7 +9,7 @@ export interface VerificationCommandResult {
   evidence: string;
 }
 
-export type VerificationRunnerFn = () => VerificationCommandResult;
+export type VerificationRunnerFn = (agentClaim: string) => VerificationCommandResult;
 
 export interface VerifyInput {
   taskId: string;
@@ -38,7 +38,7 @@ export class VerificationEngine {
     for (const check of input.checks) {
       let outcome: VerificationCommandResult;
       try {
-        outcome = check.run();
+        outcome = check.run(input.agentClaim);
       } catch (error) {
         // A check that cannot run produces UNKNOWN, never PASS.
         outcome = { status: 'UNKNOWN', evidence: error instanceof Error ? error.message : String(error) };
