@@ -22,9 +22,12 @@ const server = new ApiServer(runtime.api, {
   token: runtime.config.api.token
 });
 
+// A runtime whose backend cannot serve work is not ready to serve work, even though
+// the API is listening. Reporting a flat READY here hid a missing model behind a
+// healthy-looking banner; the top-level status now reflects the backend.
 const { host, port } = await server.listen();
 console.log(JSON.stringify({
-  status: 'READY',
+  status: backendHealth === 'HEALTHY' ? 'READY' : 'DEGRADED',
   db_path: runtime.config.dbPath,
   api_base: `http://${host}:${port}/api/v1`,
   mutations_enabled: runtime.config.api.token !== null,

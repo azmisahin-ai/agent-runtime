@@ -11,6 +11,8 @@ import { bootstrap } from '../../src/runtime/bootstrap.js';
 // fact that the adapter refuses to send until it has been initialized (spec 05
 // §3). Before that wiring existed the runtime reported BACKEND_UNAVAILABLE for a
 // reachable model server.
+const MODEL = 'fake-model';
+
 function startModelServer(): Promise<{ server: Server; url: string; chatCalls: () => number }> {
   let chats = 0;
   const server = createServer((request, response) => {
@@ -20,7 +22,9 @@ function startModelServer(): Promise<{ server: Server; url: string; chatCalls: (
       const path = request.url ?? '/';
       if (path === '/api/tags') {
         response.writeHead(200, { 'content-type': 'application/json' });
-        response.end('{"models":[]}');
+        // A reachable server that does not advertise the configured model is
+        // DEGRADED, so the fixture must name the model it is standing in for.
+        response.end(`{"models":[{"name":"${MODEL}"}]}`);
         return;
       }
       if (path === '/api/chat') {
@@ -135,7 +139,8 @@ test('the runtime initializes a reachable backend and runs a real HTTP request',
   const runtime = bootstrap({
     AGENT_RUNTIME_DB_PATH: join(dir, 'runtime.db'),
     AGENT_RUNTIME_WORKSPACE: dir,
-    AGENT_RUNTIME_OLLAMA_URL: model.url
+    AGENT_RUNTIME_OLLAMA_URL: model.url,
+    AGENT_RUNTIME_MODEL: MODEL
   });
   try {
     const project = runtime.projects.create({ name: 'live', rootPath: dir });

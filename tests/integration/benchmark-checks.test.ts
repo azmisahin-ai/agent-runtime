@@ -26,7 +26,9 @@ function startFakeModel(): Promise<FakeModel> {
     request.on('end', () => {
       if ((request.url ?? '') === '/api/tags') {
         response.writeHead(200, { 'content-type': 'application/json' });
-        response.end('{"models":[]}');
+        // The configured model must be advertised; a server that answers without it
+        // is DEGRADED, not usable (spec 05 §3).
+        response.end('{"models":[{"name":"fake"}]}');
         return;
       }
       if ((request.url ?? '') === '/api/chat') {

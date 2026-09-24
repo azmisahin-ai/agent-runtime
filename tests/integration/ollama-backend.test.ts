@@ -35,7 +35,7 @@ function startServer(handler: (path: string) => { status: number; body: string }
 }
 
 test('ollama backend initializes and completes a chat request', async () => {
-  const { server, url } = await startServer(path => path === '/api/tags' ? { status: 200, body: '{"models":[]}' } : { status: 200, body: JSON.stringify({ message: { content: 'done' }, done_reason: 'stop', prompt_eval_count: 12, eval_count: 4 }) });
+  const { server, url } = await startServer(path => path === '/api/tags' ? { status: 200, body: '{"models":[{"name":"qwen"}]}' } : { status: 200, body: JSON.stringify({ message: { content: 'done' }, done_reason: 'stop', prompt_eval_count: 12, eval_count: 4 }) });
   try {
     const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });
     await backend.initialize();
@@ -57,8 +57,50 @@ test('unreachable ollama reports unavailable and is not healthy', async () => {
   await backend.close();
 });
 
+// A reachable server with an unpulled model used to report HEALTHY, so the operator
+// only discovered the mistake when a real attempt failed. Startup must refuse it.
+test('a server without the configured model fails initialization and is not healthy', async () => {
+  const { server, url } = await startServer(() => ({ status: 200, body: '{"models":[{"name":"llama3.2:latest"}]}' }));
+  try {
+    const backend = new OllamaBackend({ baseUrl: url, model: 'qwen2.5-coder:7b' });
+    await assert.rejects(() => backend.initialize(), /Model qwen2\.5-coder:7b is not available/);
+    assert.equal(await backend.health(), 'UNKNOWN');
+    await backend.close();
+  } finally { server.close(); }
+});
+
+// A model can disappear after a successful startup (removed, or the server swapped).
+// health() must then report DEGRADED rather than keep claiming HEALTHY.
+test('a model that disappears after startup reports degraded, never healthy', async () => {
+  let models = '{"models":[{"name":"qwen"}]}';
+  const { server, url } = await startServer(() => ({ status: 200, body: models }));
+  try {
+    const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });
+    await backend.initialize();
+    assert.equal(await backend.health(), 'HEALTHY');
+    models = '{"models":[]}';
+    assert.equal(await backend.health(), 'DEGRADED');
+    await backend.close();
+  } finally { server.close(); }
+});
+
+test('a missing model during send is not retryable', async () => {
+  const { server, url } = await startServer(path => path === '/api/tags'
+    ? { status: 200, body: '{"models":[{"name":"qwen"}]}' }
+    : { status: 404, body: '{"error":"model \'qwen\' not found"}' });
+  try {
+    const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });
+    await backend.initialize();
+    await assert.rejects(
+      () => backend.send({ task_id: 't', attempt_id: 'a', context: contextPack(), response_mode: 'TEXT' }),
+      (error: Error & { retryable?: boolean }) => /is not available/.test(error.message) && error.retryable === false
+    );
+    await backend.close();
+  } finally { server.close(); }
+});
+
 test('unsupported pause/resume fails explicitly', async () => {
-  const { server, url } = await startServer(() => ({ status: 200, body: '{"models":[]}' }));
+  const { server, url } = await startServer(() => ({ status: 200, body: '{"models":[{"name":"qwen"}]}' }));
   try {
     const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });
     await backend.initialize();
@@ -70,7 +112,7 @@ test('unsupported pause/resume fails explicitly', async () => {
 });
 
 test('backend errors are classified as retryable backend failures', async () => {
-  const { server, url } = await startServer(path => path === '/api/tags' ? { status: 200, body: '{"models":[]}' } : { status: 500, body: '{"error":"boom"}' });
+  const { server, url } = await startServer(path => path === '/api/tags' ? { status: 200, body: '{"models":[{"name":"qwen"}]}' } : { status: 500, body: '{"error":"boom"}' });
   try {
     const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });
     await backend.initialize();
@@ -81,7 +123,7 @@ test('backend errors are classified as retryable backend failures', async () => 
 
 test('streaming yields text deltas and a done event', async () => {
   const { server, url } = await startServer(path => path === '/api/tags'
-    ? { status: 200, body: '{"models":[]}' }
+    ? { status: 200, body: '{"models":[{"name":"qwen"}]}' }
     : { status: 200, body: '{"message":{"content":"he"}}\n{"message":{"content":"llo"},"done":true}\n' });
   try {
     const backend = new OllamaBackend({ baseUrl: url, model: 'qwen' });

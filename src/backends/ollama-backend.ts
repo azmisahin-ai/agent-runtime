@@ -38,19 +38,32 @@ export class OllamaBackend implements AgentBackend {
     this.doFetch = options.fetchImpl ?? fetch;
   }
 
-  async initialize(): Promise<void> {
+  // A server that answers is not a server that can serve this model. Checking only
+  // `/api/tags` reported HEALTHY for a model that was never pulled, so the operator
+  // learned about the mistake from a failed attempt instead of from startup.
+  private async modelPresent(): Promise<boolean> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await this.doFetch(`${this.baseUrl}/api/tags`, { signal: controller.signal });
       if (!response.ok) throw new BackendError('BACKEND_UNAVAILABLE', `Ollama returned ${response.status}`, true);
-      this.state = 'READY';
+      const payload = await response.json() as { models?: { name?: string; model?: string }[] };
+      const names = (payload.models ?? []).flatMap(entry => [entry.name, entry.model]).filter((name): name is string => typeof name === 'string');
+      return names.includes(this.model);
     } catch (error) {
       if (error instanceof BackendError) throw error;
       throw new BackendError('BACKEND_UNAVAILABLE', `Ollama is not reachable at ${this.baseUrl}`, true);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async initialize(): Promise<void> {
+    const present = await this.modelPresent();
+    if (!present) {
+      throw new BackendError('BACKEND_UNAVAILABLE', `Model ${this.model} is not available at ${this.baseUrl}; pull it before starting the runtime`, false);
+    }
+    this.state = 'READY';
   }
 
   async start(_request: StartRequest): Promise<ExecutionHandle> {
@@ -71,7 +84,14 @@ export class OllamaBackend implements AgentBackend {
         signal: controller.signal,
         body: JSON.stringify({ model: this.model, stream: false, messages: this.buildMessages(request.context) })
       });
-      if (!response.ok) throw new BackendError('BACKEND_UNAVAILABLE', `Ollama returned ${response.status}`, true);
+      if (!response.ok) {
+        // A missing model will not fix itself on retry, so it must not be retryable;
+        // a transient server error still is.
+        if (response.status === 404) {
+          throw new BackendError('BACKEND_UNAVAILABLE', `Model ${this.model} is not available at ${this.baseUrl}`, false);
+        }
+        throw new BackendError('BACKEND_UNAVAILABLE', `Ollama returned ${response.status}`, true);
+      }
       const payload = await response.json() as { message?: { content?: string }; done_reason?: string; prompt_eval_count?: number; eval_count?: number };
       return {
         request_id: newId('req'),
@@ -149,15 +169,11 @@ export class OllamaBackend implements AgentBackend {
   async health(): Promise<BackendHealth> {
     if (this.state === 'CLOSED') return 'UNAVAILABLE';
     if (this.state === 'DISCOVERED') return 'UNKNOWN';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
     try {
-      const response = await this.doFetch(`${this.baseUrl}/api/tags`, { signal: controller.signal });
-      return response.ok ? 'HEALTHY' : 'DEGRADED';
+      // The server answering is not enough; a missing model is DEGRADED, not HEALTHY.
+      return await this.modelPresent() ? 'HEALTHY' : 'DEGRADED';
     } catch {
       return 'UNAVAILABLE';
-    } finally {
-      clearTimeout(timer);
     }
   }
 
