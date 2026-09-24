@@ -9,7 +9,15 @@ export interface VerificationCommandResult {
   evidence: string;
 }
 
-export type VerificationRunnerFn = (agentClaim: string) => VerificationCommandResult;
+// A check runs against the attempt it is verifying, so a check that executes a
+// command can be recorded as a tool run under the same task/attempt (spec 10 §3,
+// 11 §3). The context is runtime-supplied; it never comes from the model.
+export interface CheckRunContext {
+  taskId: string;
+  attemptId: string;
+}
+
+export type VerificationRunnerFn = (agentClaim: string, context: CheckRunContext) => VerificationCommandResult;
 
 export interface VerifyInput {
   taskId: string;
@@ -35,10 +43,11 @@ export class VerificationEngine {
   verify(input: VerifyInput): VerificationResult {
     const startedAt = nowIso();
     const checks: VerificationCheck[] = [];
+    const context: CheckRunContext = { taskId: input.taskId, attemptId: input.attemptId };
     for (const check of input.checks) {
       let outcome: VerificationCommandResult;
       try {
-        outcome = check.run(input.agentClaim);
+        outcome = check.run(input.agentClaim, context);
       } catch (error) {
         // A check that cannot run produces UNKNOWN, never PASS.
         outcome = { status: 'UNKNOWN', evidence: error instanceof Error ? error.message : String(error) };

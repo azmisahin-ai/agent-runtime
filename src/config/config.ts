@@ -1,5 +1,17 @@
 import { resolve } from 'node:path';
-import type { ToolCapability } from '../domain/types.js';
+import type { ToolCapability, VerificationCheck } from '../domain/types.js';
+
+// An operator-declared verification check (spec 11 §2). The runtime, not the
+// client, decides what proves success, so these come from configuration only:
+// no API request may supply an executable check (spec 11 §2, 15 §10).
+export interface VerificationCheckSpec {
+  name: string;
+  kind: VerificationCheck['kind'];
+  // Structured argv, run through the Tool Engine. Absent for a REPOSITORY check,
+  // which derives its verdict from repository evidence instead of a command.
+  argv?: string[];
+  cwd?: string;
+}
 
 export interface RuntimeConfig {
   dbPath: string;
@@ -19,6 +31,7 @@ export interface RuntimeConfig {
   allowNetworkAccess: boolean;
   allowDestructiveOperations: boolean;
   allowedCommands: string[];
+  verification: { checks: VerificationCheckSpec[] };
   profile: string;
   policyVersion: number;
   api: { port: number; host: string; token: string | null };
@@ -26,6 +39,48 @@ export interface RuntimeConfig {
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 const VALID_CAPABILITIES: ToolCapability[] = ['read_only', 'filesystem_read', 'filesystem_write', 'process_execute', 'network_access', 'git_access'];
+const VALID_CHECK_KINDS: VerificationCheck['kind'][] = ['TEST', 'BUILD', 'LINT', 'TYPECHECK', 'INVARIANT', 'REPOSITORY', 'CUSTOM'];
+
+// Verification checks are operator-declared, so an unusable declaration is a hard
+// startup error rather than a check that silently never runs (spec 11 §2). A check
+// with no way to run would otherwise be a green light that verifies nothing.
+function parseVerificationChecks(env: Record<string, string | undefined>): VerificationCheckSpec[] {
+  const raw = env.AGENT_RUNTIME_VERIFICATION_CHECKS;
+  if (!raw || raw.trim().length === 0) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`AGENT_RUNTIME_VERIFICATION_CHECKS must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!Array.isArray(parsed)) throw new Error('AGENT_RUNTIME_VERIFICATION_CHECKS must be a JSON array of checks');
+
+  return parsed.map((entry, index) => {
+    if (typeof entry !== 'object' || entry === null) throw new Error(`verification check #${index} must be an object`);
+    const record = entry as Record<string, unknown>;
+    const name = record.name;
+    if (typeof name !== 'string' || name.length === 0) throw new Error(`verification check #${index} requires a non-empty name`);
+    const kind = record.kind;
+    if (typeof kind !== 'string' || !VALID_CHECK_KINDS.includes(kind as VerificationCheck['kind'])) {
+      throw new Error(`verification check ${name} has an invalid kind: ${String(kind)}`);
+    }
+    const argv = record.argv;
+    if (argv !== undefined) {
+      if (!Array.isArray(argv) || argv.length === 0 || argv.some(token => typeof token !== 'string' || token.length === 0)) {
+        throw new Error(`verification check ${name} has an invalid argv: expected a non-empty array of strings`);
+      }
+    }
+    // A REPOSITORY check reads repository evidence; every other kind must declare how
+    // it runs, or it could never produce a verdict.
+    if (kind !== 'REPOSITORY' && argv === undefined) {
+      throw new Error(`verification check ${name} of kind ${kind} requires an argv`);
+    }
+    const cwd = record.cwd;
+    if (cwd !== undefined && typeof cwd !== 'string') throw new Error(`verification check ${name} has an invalid cwd`);
+    return { name, kind: kind as VerificationCheck['kind'], argv: argv as string[] | undefined, cwd: cwd as string | undefined };
+  });
+}
 
 // Baseline grants. filesystem_write/process_execute/network_access are NOT
 // granted here: they must be explicitly requested and are gated further by the
@@ -92,6 +147,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // operator opt-in (spec 15 §9).
     allowDestructiveOperations: env.AGENT_RUNTIME_ALLOW_DESTRUCTIVE === 'true',
     allowedCommands: (env.AGENT_RUNTIME_ALLOWED_COMMANDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
+    verification: { checks: parseVerificationChecks(env) },
     profile: env.AGENT_RUNTIME_PROFILE ?? 'local-dev',
     policyVersion: 1,
     api: {

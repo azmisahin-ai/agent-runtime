@@ -45,6 +45,7 @@ import { RegressionRunner } from '../evaluation/regression-runner.js';
 import { FailureClassifier } from '../evaluation/failure-classifier.js';
 import { IntegrityChecker } from '../evaluation/integrity.js';
 import { ArtifactStore } from '../evaluation/artifact-store.js';
+import { checksFromConfig } from '../verification/config-checks.js';
 import { repoPath } from './paths.js';
 
 export interface Runtime {
@@ -205,6 +206,14 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
     memoryEngine, contextRetriever, logger, metrics, tracer, workspaceLock, persistenceGuard
   }, backend, config.backendKind);
+
+  // Verification checks are an operator control declared in configuration (spec 11
+  // §2, 15 §10). Binding them here is what makes an API-driven attempt able to reach
+  // COMPLETED: without a provider, an attempt is verified with no checks and can
+  // never pass.
+  orchestrator.setVerificationChecks(() =>
+    checksFromConfig(config.verification.checks, { toolEngine, workspaceRoot: config.workspaceRoot })
+  );
 
   const runtime: Runtime = {
     config, db, projects, tasks, events, taskService, checkpoints, configSnapshots,

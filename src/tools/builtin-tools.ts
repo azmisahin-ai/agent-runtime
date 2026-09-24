@@ -189,8 +189,12 @@ function terminalExecTool(): ToolImplementation {
       // sandbox is configured, execution is refused: there is no ambient fallback.
       if (!context.runCommand) throw new Error('command denied: no process sandbox configured');
       const result = context.runCommand(argv, cwd, timeout);
+      // The exit code is part of the observation, not just the text: verification
+      // decides PASS/FAIL from it, and a model that cannot see it cannot tell a
+      // successful command from a failing one (spec 10 §9, 11 §3).
       const combined = `${result.stdout}${result.stderr}`;
-      return JSON.stringify(redactSecrets(truncate(combined, context.maxOutputBytes || MAX_DEFAULT_OUTPUT).text));
+      const redacted = redactSecrets(truncate(combined, context.maxOutputBytes || MAX_DEFAULT_OUTPUT).text);
+      return JSON.stringify({ exitCode: result.exitCode, timedOut: result.timedOut, output: redacted.text });
     }
   };
 }
