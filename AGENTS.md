@@ -74,8 +74,10 @@ instead, set `AGENT_RUNTIME_BACKEND=cli`, `AGENT_RUNTIME_CLI_COMMAND=<path>` and
 `AGENT_RUNTIME_ALLOW_PROCESS=true`. Startup then reports `backend.kind`.
 
 Run the 20-task live benchmark with `node dist/scripts/run-live-benchmark.js`; it
-refuses to run when the model server is unhealthy. See `docs/BENCHMARK.md` for what
-the numbers do and do not mean.
+refuses to run when the model server is unhealthy. Each task pack is verified against
+its declared `verificationIntent` and gets a clean `EPHEMERAL_COPY` workspace, so a
+task passes only when the intent is met; see `docs/BENCHMARK.md` for what the numbers
+do and do not mean.
 
 ## Handoff
 

@@ -51,10 +51,42 @@ evidence. The CLI backend is the path that actually mutates a workspace.
 
 ## Recorded results
 
-Live run on 2026-09-23, `qwen2.5-coder:1.5b` on CPU (Ollama, 11.2 GiB available).
-That run predates the per-task checks below and used the single mechanics invariant,
-so its `success_rate: 1` meant "every attempt completed against a live model". The
-mechanics results stand:
+### Live run under per-task checks — 2026-09-24, `qwen2.5-coder:1.5b`
+
+Ollama 0.34.3 on CPU (11.7 GiB available), 20-task suite, per-task intent checks:
+
+| Field | Value |
+| --- | --- |
+| Run count | 20 (5 per category) |
+| Wall clock | 213.9 s |
+| Mean latency | 10.6 s |
+| Median latency | 10.2 s |
+| p95 latency | 20.9 s |
+| `success_rate` | 0.55 (11/20) |
+| `verification_pass_rate` | 0.55 (11/20) |
+| Failure categories | `VERIFICATION_FAILURE` × 9, `NONE` × 11 |
+| Reproducible | 20/20 (a revision was pinned) |
+
+Per category:
+
+| Category | Passed |
+| --- | --- |
+| REPOSITORY_ANALYSIS | 3/5 |
+| BUG_FIX | 0/5 |
+| TEST_FIX | 4/5 |
+| FEATURE | 4/5 |
+
+BUG_FIX is 0/5 because the Ollama backend is text-only: the model reasons in prose
+and never edits the file, so the file-backed checks correctly fail. This is the
+expected and honest result, not a harness defect. The claim-only categories
+(TEST_FIX, FEATURE) pass when the model's answer actually describes the repair or the
+added surface; the analysis tasks pass when the answer cites a real artifact.
+
+### Earlier mechanics run — 2026-09-23
+
+This run predates the per-task checks and used the single mechanics invariant, so its
+`success_rate: 1` meant "every attempt completed against a live model". The mechanics
+results stand:
 
 | Field | Value |
 | --- | --- |
@@ -69,13 +101,6 @@ Per-run latencies ranged from 0.99 s to 45.8 s. `reproducible` was `false` in th
 first execution because the seeded workspace was not a git repository; the harness now
 initializes one and commits the seed, so subsequent runs pin a revision.
 
-Because the live model server was not available in the environment that added the
-per-task checks, that change is verified by `tests/integration/benchmark-checks.test.ts`
-against a real HTTP model server returning fixed text, plus a full harness run against
-the same server. The full run scores 11/20 with 9 `VERIFICATION_FAILURE`s: the prose
-answer cannot repair the seeded defects, exactly as intended. When Ollama is available
-again, run the command above to record a live-model result under the new checks.
-
 ## Honest gaps this run surfaced
 
 - A backend that had never been initialized reported `UNKNOWN` health and failed
@@ -88,3 +113,12 @@ again, run the command above to record a live-model result under the new checks.
 - A seed comment ("terminal states may return to RUNNING") tripped the state-race
   check's own regex, passing it without a fix. Fixed by removing the comment and
   requiring an actual guard; caught by running the harness against a fixed-text server.
+
+## Remaining limitations
+
+- The workspace is a fixed synthetic repository, not an arbitrary one, so the run does
+  not prove a model can solve a real task on a real codebase.
+- Analysis checks assert that the answer cites an artifact; they do not verify that the
+  cited fact is correct.
+- The Ollama backend cannot mutate a workspace, so BUG_FIX tasks cannot pass through
+  it. The CLI backend is the transport that actually edits files.

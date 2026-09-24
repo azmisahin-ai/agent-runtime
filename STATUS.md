@@ -67,16 +67,15 @@
 
 1. Install dependencies if missing.
 2. Run `npm run check` (must be green: build + tests).
-3. Record a live-model benchmark result under the per-task checks once a live model
-   server is available again (the checks themselves are implemented and verified).
-4. Strengthen isolation beyond the in-process sandbox and add backends beyond
+3. Strengthen isolation beyond the in-process sandbox and add backends beyond
    Ollama and CLI.
-5. Update status + traceability after each coherent slice.
+4. Update status + traceability after each coherent slice.
 
 ## Environment notes
 
-- A live Ollama server with `qwen2.5-coder:1.5b` was available and used for the
-  live-model benchmark in `docs/BENCHMARK.md`. The in-process fake HTTP server test
+- A live Ollama server with `qwen2.5-coder:1.5b` was used for the live-model
+  benchmarks in `docs/BENCHMARK.md` (a local Ollama 0.34.3 was installed under
+  `/workspace/ollama`). The in-process fake HTTP server test
   (`tests/integration/ollama-backend.test.ts`) still covers the adapter without a
   live model, so CI does not depend on Ollama being installed.
 - Default network policy is DENY; process execution and filesystem writes are disabled
@@ -97,5 +96,6 @@ the M5 evaluation & benchmarking layer are implemented and tested. The V0.1
 release-candidate consolidation and a live-model benchmark execution are complete.
 The benchmark now verifies each task pack against its declared `verificationIntent`
 and honours the declared `EPHEMERAL_COPY` isolation, so it no longer reports a single
-mechanics invariant as task success; it still does not prove a model solved a real
-task on an arbitrary repository (see `docs/BENCHMARK.md`).
+mechanics invariant as task success. The recorded live run scores 11/20, with BUG_FIX
+at 0/5 because the text-only Ollama backend cannot edit a workspace; it still does not
+prove a model solved a real task on an arbitrary repository (see `docs/BENCHMARK.md`).
