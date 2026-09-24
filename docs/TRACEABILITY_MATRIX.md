@@ -77,7 +77,7 @@ here rather than given a PASS row so the matrix cannot be read as complete cover
 | Requirement | Specification | State |
 |---|---|---|
 | ACP / native-agent transport adapters | 05 §8 | PLANNED — the CLI transport is implemented; a real ACP stdio JSON-RPC session transport and native-agent adapters are not |
-| Live-model benchmark execution | 06 | PARTIAL — the 20-task suite runs against a live Ollama model via `scripts/run-live-benchmark.ts` (see `docs/BENCHMARK.md`); each task pack is now verified against its declared `verificationIntent` with `EPHEMERAL_COPY` isolation, tested in `tests/integration/benchmark-checks.test.ts`. It still measures a fixed synthetic workspace, not an arbitrary repository |
+| Live-model benchmark execution | 06 | PARTIAL — the 20-task suite runs against a live Ollama model via `scripts/run-live-benchmark.ts` (see `docs/BENCHMARK.md`); each task pack is now verified against its declared `verificationIntent` with `EPHEMERAL_COPY` isolation, tested in `tests/integration/benchmark-checks.test.ts`. The harness can also drive the CLI transport (`--backend cli`); its positive control `scripts/fixtures/repairing-agent.sh` scores 20/20, proving every check is reachable. It still measures a fixed synthetic workspace, not an arbitrary repository |
 
 ## Status definitions
 
