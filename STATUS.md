@@ -58,6 +58,7 @@
 
 ## Not yet implemented
 
+- A background executor that drains the task queue. `POST /tasks/{id}/start` accepts the request and moves the task to `QUEUED` (spec 09 §5), but nothing consumes that queue: execution only happens when a client calls `POST /tasks/{id}/run`, which is the synchronous single-attempt entry point. So the async control verbs are accepted and durable, but there is no scheduler turning `QUEUED` into an attempt on its own. The lifecycle is therefore honest about what ran, and the API contract's "asynchronous" wording is only half met
 - A benchmark that scores a live model on an arbitrary repository it was not seeded with. The current harness runs a 20-task suite against a seeded workspace with known defects and checks each pack against its declared `verificationIntent`, so it measures the checks and the backend honestly; it does not yet measure general task-solving quality (see `docs/BENCHMARK.md`)
 - Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
 - Multi-provider backends beyond Ollama and CLI
