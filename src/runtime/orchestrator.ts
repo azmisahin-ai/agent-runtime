@@ -75,6 +75,7 @@ export class RuntimeOrchestrator {
   // Host-provided checks for tasks run through the public API surface. When unset,
   // API-driven attempts are verified with no checks and therefore cannot pass.
   private verificationChecks: VerificationCheckProvider = () => [];
+  private readonly initializedBackends = new WeakSet<AgentBackend>();
 
   constructor(private readonly deps: OrchestratorDeps, backend: AgentBackend, backendId = 'ollama') {
     this.currentBackend = backend;
@@ -95,9 +96,21 @@ export class RuntimeOrchestrator {
   setBackend(backend: AgentBackend, backendId: string): void {
     this.currentBackend = backend;
     this.currentBackendId = backendId;
+    this.initializedBackends.delete(backend);
   }
 
   get backend(): AgentBackend { return this.currentBackend; }
+
+  // A backend must be initialized before it can serve requests (spec 05 §3). The
+  // adapter refuses to send while it is still DISCOVERED, so without this a real
+  // model server would be reported as BACKEND_UNAVAILABLE on every attempt.
+  // Initialization is attempted once per backend instance and its failure is left
+  // to surface as a classified backend error, never swallowed into success.
+  private async ensureBackendReady(backend: AgentBackend): Promise<void> {
+    if (this.initializedBackends.has(backend)) return;
+    await backend.initialize();
+    this.initializedBackends.add(backend);
+  }
 
   async run(taskId: string, verification: Omit<VerifyInput, 'taskId' | 'attemptId' | 'agentClaim'>, repositoryRevision: string | null = null): Promise<RunResult> {
     // At most one attempt may write a workspace at a time (roadmap M4). The lock is
@@ -185,6 +198,7 @@ export class RuntimeOrchestrator {
       if (contextSpan) this.deps.tracer!.endSpan(contextSpan.spanId, 'OK', { sections: context.sections.length });
 
       const backendSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'backend_request', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
+      await this.ensureBackendReady(this.backend);
       response = await this.backend.send({
         task_id: taskId,
         attempt_id: attempt.attemptId,
