@@ -34,7 +34,7 @@ export interface RuntimeConfig {
   verification: { checks: VerificationCheckSpec[] };
   profile: string;
   policyVersion: number;
-  api: { port: number; host: string; token: string | null };
+  api: { port: number; host: string; token: string | null; queueDrainIntervalMs: number };
 }
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -158,7 +158,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       port: Number(env.AGENT_RUNTIME_API_PORT ?? '8787'),
       host: env.AGENT_RUNTIME_API_HOST ?? '127.0.0.1',
       // No default token: mutations stay disabled until an operator provides one.
-      token: env.AGENT_RUNTIME_API_TOKEN && env.AGENT_RUNTIME_API_TOKEN.length > 0 ? env.AGENT_RUNTIME_API_TOKEN : null
+      token: env.AGENT_RUNTIME_API_TOKEN && env.AGENT_RUNTIME_API_TOKEN.length > 0 ? env.AGENT_RUNTIME_API_TOKEN : null,
+      // The queue drainer is off unless the operator enables it; a runtime that
+      // silently started executing queued work would be a surprising side effect.
+      queueDrainIntervalMs: Number(env.AGENT_RUNTIME_QUEUE_DRAIN_MS ?? '0')
     }
   };
 }

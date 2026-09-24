@@ -19,12 +19,16 @@ export class TaskRepository {
 
   get(taskId: string): Task | null {
     const row = this.db.raw.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId) as Record<string, unknown> | undefined;
-    return row ? {
+    return row ? this.mapTask(row) : null;
+  }
+
+  private mapTask(row: Record<string, unknown>): Task {
+    return {
       taskId: String(row.task_id), projectId: String(row.project_id), title: String(row.title), description: String(row.description),
       state: row.state as Task['state'], currentAttemptId: row.current_attempt_id ? String(row.current_attempt_id) : null,
       currentCheckpointId: row.current_checkpoint_id ? String(row.current_checkpoint_id) : null,
       createdAt: String(row.created_at), updatedAt: String(row.updated_at)
-    } : null;
+    };
   }
 
   transition(taskId: string, to: Task['state']): Task {
@@ -57,6 +61,12 @@ export class TaskRepository {
   listAttempts(taskId: string): Attempt[] {
     const rows = this.db.raw.prepare('SELECT * FROM attempts WHERE task_id = ? ORDER BY attempt_number ASC').all(taskId) as Record<string, unknown>[];
     return rows.map(row => this.mapAttempt(row));
+  }
+
+  // Oldest-first by creation so a queue drains in arrival order.
+  listByState(state: Task['state']): Task[] {
+    const rows = this.db.raw.prepare('SELECT * FROM tasks WHERE state = ? ORDER BY created_at ASC, task_id ASC').all(state) as Record<string, unknown>[];
+    return rows.map(row => this.mapTask(row));
   }
 
   countAttempts(taskId: string): number {

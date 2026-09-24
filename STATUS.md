@@ -1,7 +1,7 @@
 # Agent Runtime — Status
 
 **Last repository checkpoint:** V0.1 release candidate assembled (M0–M5 implemented and verified; docs/status/traceability aligned with code)
-**Current milestone:** V0.1 release candidate — live-model benchmark executed; CLI-agent transport added
+**Current milestone:** V0.1 release candidate — bounded agent tool loop and opt-in queue drainer added
 
 ## Verified implementation
 
@@ -35,6 +35,8 @@
 - Secret redaction across logs, memory and tool output
 - Config snapshot, context snapshot, tool-run and evaluation persistence
 - Runtime orchestrator (runtime owns Task state and completion)
+- Bounded agent tool loop: a model `TOOL_REQUEST` is executed through the Tool Engine, its observation is fed back as a context section, and the model is asked again until it returns `FINAL` or the bound (`AGENT_RUNTIME_MAX_TOOL_ITERATIONS`) is reached; an exhausted loop is recorded as a failure with a `ToolLoopExhausted` event, so an attempt with no final answer is never COMPLETED
+- Opt-in task queue drainer (`AGENT_RUNTIME_QUEUE_DRAIN_MS`): `POST /tasks/{id}/start` becomes an executed attempt without a client calling `/run`. The drainer is a scheduler, not an authority — it holds no state, re-reads `QUEUED` each pass, delegates to the same API path as a synchronous run, and never resurrects a failed task
 - Runtime HTTP+JSON API under `/api/v1` (spec 09): projects/tasks, async idempotency-key-protected start/pause/resume/cancel/retry, run, events, SSE stream with resume-after-sequence, attempts/checkpoints/tools/evaluations, repository status, backend capabilities
 - API authentication (bearer token; mutations disabled without a configured token), typed error contract, DTOs separate from domain entities
 - Client cannot supply verification checks or widen policy; runtime-owned checks are host-configured
@@ -53,12 +55,12 @@
 - External-agent trust boundary (spec 05 §8, 15 §11): external capability is the intersection of operator grant and agent declaration, so nothing external can silently expand policy; every tool is documented RUNTIME- or EXTERNAL-owned, and an external session id maps to a Task/Attempt without becoming authority
 - Traces (spec 17 §7): best-effort parent/child spans for an attempt (`attempt`, `build_context`, `backend_request`) with secret/classification-sanitized attributes; a failing exporter degrades tracing only and canonical state stays in the event store
 - Data classification (spec 15 §12): PUBLIC/PROJECT/SENSITIVE/SECRET derived from content (a declared label cannot downgrade a secret) and enforced per channel — SECRET never enters persistence/context/log/artifact, SENSITIVE never enters durable memory/log/artifact but may serve the current context
-- M0–M5 unit/integration/adversarial/recovery/e2e tests (199 passing)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (213 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
-- A background executor that drains the task queue. `POST /tasks/{id}/start` accepts the request and moves the task to `QUEUED` (spec 09 §5), but nothing consumes that queue: execution only happens when a client calls `POST /tasks/{id}/run`, which is the synchronous single-attempt entry point. So the async control verbs are accepted and durable, but there is no scheduler turning `QUEUED` into an attempt on its own. The lifecycle is therefore honest about what ran, and the API contract's "asynchronous" wording is only half met
+- Multi-worker / concurrent queue execution. The drainer is single-pass and sequential by design (one workspace, one writer); it drains `QUEUED` tasks on an operator-set interval but does not schedule across workspaces or priorities
 - A benchmark that scores a live model on an arbitrary repository it was not seeded with. The current harness runs a 20-task suite against a seeded workspace with known defects and checks each pack against its declared `verificationIntent`, so it measures the checks and the backend honestly; it does not yet measure general task-solving quality (see `docs/BENCHMARK.md`)
 - Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
 - Multi-provider backends beyond Ollama and CLI

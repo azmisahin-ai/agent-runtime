@@ -68,6 +68,8 @@
 | Data classification (PUBLIC/PROJECT/SENSITIVE/SECRET across persistence, context, logging, artifacts) | 15 §12 | `src/security/data-classification.ts`; gates in `src/memory/memory-policy.ts`, `src/context/context-engine.ts`, `src/observability/logger.ts`, `src/evaluation/artifact-store.ts` | `tests/adversarial/data-classification.test.ts` | PASS (M4 remainder) |
 | Distributed traces / causal timing structure | 17 §7 | `src/observability/tracer.ts` (parent/child spans), orchestrator (`attempt`, `build_context`, `backend_request`), bootstrap | `tests/unit/tracer.test.ts`, `tests/e2e/vertical-slice.test.ts` | PASS |
 | External-agent trust boundary (ownership table + capability ceiling; external session mapped to Task/Attempt, never authority) | 05 §8, 15 §11 | `src/security/external-agent.ts` | `tests/adversarial/external-agent.test.ts` | PASS |
+| Bounded agent tool loop (observation fed back; loop bound; no-final-answer is not COMPLETED) | 05 §4, 10, 14 | `src/runtime/orchestrator.ts` (`runAttempt` loop, `toolObservationSection`), `src/config/config.ts` (`maxToolIterations`) | `tests/e2e/vertical-slice.test.ts` | PASS |
+| Async start becomes an executed attempt (queue drainer, opt-in, no queue-owned state) | 09 §5, 13, 14 §3 | `src/runtime/task-queue-drainer.ts`, `src/persistence/task-repository.ts` (`listByState`), `src/main.ts` | `tests/e2e/task-queue.test.ts` | PASS |
 
 ## Known gaps
 

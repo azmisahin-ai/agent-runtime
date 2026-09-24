@@ -32,6 +32,7 @@ import { OllamaBackend } from '../backends/ollama-backend.js';
 import { CliBackend } from '../backends/cli-backend.js';
 import type { AgentBackend } from '../backends/agent-backend.js';
 import { RuntimeOrchestrator } from './orchestrator.js';
+import { TaskQueueDrainer } from './task-queue-drainer.js';
 import { WorkspaceLock } from './workspace-lock.js';
 import { SecurityAudit } from '../security/security-audit.js';
 import { DestructiveOperationPolicy } from '../security/destructive-operations.js';
@@ -86,6 +87,7 @@ export interface Runtime {
   persistenceGuard: PersistenceGuard;
   workspaceLock: WorkspaceLock;
   api: RuntimeApiService;
+  queueDrainer: TaskQueueDrainer;
   evaluationRuns: EvaluationRunRepository;
   evaluationRunner: EvaluationRunner;
   evaluationReporter: EvaluationReporter;
@@ -223,8 +225,12 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     orchestrator, backend, securityAudit, workspaceLock,
     destructiveOps, sandbox, persistenceGuard,
     evaluationRuns, evaluationRunner, evaluationReporter, regressionRunner, failureClassifier, integrityChecker, artifactStore,
-    api: undefined as unknown as RuntimeApiService
+    api: undefined as unknown as RuntimeApiService,
+    queueDrainer: undefined as unknown as TaskQueueDrainer
   };
   runtime.api = new RuntimeApiService(runtime);
+  runtime.queueDrainer = new TaskQueueDrainer({
+    tasks, api: runtime.api, intervalMs: config.api.queueDrainIntervalMs, logger
+  });
   return runtime;
 }

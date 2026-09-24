@@ -22,6 +22,11 @@ const server = new ApiServer(runtime.api, {
   token: runtime.config.api.token
 });
 
+// The queue drainer is opt-in: with AGENT_RUNTIME_QUEUE_DRAIN_MS unset, `POST /start`
+// only records the request and a client must call `/run`. Enabling it makes the
+// accepted start requests actually execute.
+runtime.queueDrainer.start();
+
 // A runtime whose backend cannot serve work is not ready to serve work, even though
 // the API is listening. Reporting a flat READY here hid a missing model behind a
 // healthy-looking banner; the top-level status now reflects the backend.
@@ -39,6 +44,7 @@ console.log(JSON.stringify({
 
 const shutdown = async (signal: string) => {
   console.log(JSON.stringify({ status: 'SHUTTING_DOWN', signal }));
+  runtime.queueDrainer.stop();
   await server.close();
   runtime.workspaceLock.release();
   runtime.db.close();
