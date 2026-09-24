@@ -6,14 +6,23 @@ import { join } from 'node:path';
 import { bootstrap } from '../../src/runtime/bootstrap.js';
 import type { AgentBackend, AgentEvent, AgentRequest, AgentResponse, BackendCapabilities, BackendHealth, ExecutionHandle, StartRequest } from '../../src/backends/agent-backend.js';
 
-// A scripted backend: it exercises the runtime contract without a live model.
+// A scripted backend: it exercises the runtime contract without a live model. A
+// `responses` sequence models a conversation (tool request, then final); the last
+// entry repeats once exhausted.
 class FakeBackend implements AgentBackend {
   readonly id = 'fake';
-  constructor(private readonly behavior: { response?: AgentResponse; fail?: Error }) {}
+  private sent = 0;
+  constructor(private readonly behavior: { response?: AgentResponse; responses?: AgentResponse[]; fail?: Error }) {}
   async initialize(): Promise<void> {}
   async start(_request: StartRequest): Promise<ExecutionHandle> { return { session_id: 'session_fake', external_session_id: null }; }
   async send(_request: AgentRequest): Promise<AgentResponse> {
     if (this.behavior.fail) throw this.behavior.fail;
+    const sequence = this.behavior.responses;
+    if (sequence && sequence.length > 0) {
+      const response = sequence[Math.min(this.sent, sequence.length - 1)];
+      this.sent += 1;
+      return response;
+    }
     return this.behavior.response ?? { request_id: 'req_1', type: 'FINAL', content: 'done' };
   }
   async *stream(_request: AgentRequest): AsyncIterable<AgentEvent> { yield { type: 'DONE' }; }
@@ -117,14 +126,59 @@ test('backend failure is classified and recorded as evaluation evidence', async 
 test('tool requests from the model pass through the tool engine, not direct execution', async () => {
   const f = fixture();
   try {
+    // The model reads a file, then answers. The loop must execute the tool through
+    // the Tool Engine, feed the observation back, and stop on the FINAL turn.
     f.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: 'target.txt' } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: 'target.txt' } } },
+        { request_id: 'r2', type: 'FINAL', content: 'the file says: content to read' }
+      ]
     }), 'fake');
     const result = await f.runtime.orchestrator.run(f.task.taskId, { checks: passingChecks() });
     assert.equal(result.toolRuns.length, 1);
     assert.equal(result.toolRuns[0].status, 'SUCCEEDED');
     assert.equal(result.toolRuns[0].output, 'content to read');
     assert.equal(f.runtime.toolRuns.listAttempt(result.attemptId).length, 1);
+    assert.equal(result.finalState, 'COMPLETED');
+  } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a tool observation is fed back into the next model turn', async () => {
+  const f = fixture();
+  try {
+    // The second turn's context must carry what the first turn's tool returned;
+    // otherwise the model would have to guess the result it just asked for.
+    let secondContext = '';
+    class CapturingBackend extends FakeBackend {
+      private turns = 0;
+      override async send(request: AgentRequest): Promise<AgentResponse> {
+        this.turns += 1;
+        if (this.turns === 1) {
+          return { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: 'target.txt' } } };
+        }
+        secondContext = request.context.sections.map(s => s.content).join('\n');
+        return { request_id: 'r2', type: 'FINAL', content: 'done' };
+      }
+    }
+    f.runtime.orchestrator.setBackend(new CapturingBackend({}), 'fake');
+    await f.runtime.orchestrator.run(f.task.taskId, { checks: passingChecks() });
+    assert.match(secondContext, /tool=read_file status=SUCCEEDED/);
+    assert.match(secondContext, /content to read/);
+  } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a model that never stops requesting tools is bounded, not looped forever', async () => {
+  const f = fixture();
+  try {
+    // Every turn asks for the same tool. Without a bound this would never end, and
+    // the attempt has no final answer, so it must fail rather than be COMPLETED.
+    f.runtime.orchestrator.setBackend(new FakeBackend({
+      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: 'target.txt' } } }
+    }), 'fake');
+    const result = await f.runtime.orchestrator.run(f.task.taskId, { checks: passingChecks() });
+    assert.equal(result.outcome, 'FAILURE');
+    assert.notEqual(result.finalState, 'COMPLETED');
+    assert.ok(f.runtime.events.listTask(f.task.taskId).some(e => e.type === 'ToolLoopExhausted'));
   } finally { f.runtime.db.close(); rmSync(f.dir, { recursive: true, force: true }); }
 });
 
@@ -132,7 +186,10 @@ test('a model-requested tool cannot escape policy (denied, not executed)', async
   const f = fixture();
   try {
     f.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: '../../etc/passwd' } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'read_file', version: '1.0.0', arguments: { path: '../../etc/passwd' } } },
+        { request_id: 'r2', type: 'FINAL', content: 'could not read it' }
+      ]
     }), 'fake');
     const result = await f.runtime.orchestrator.run(f.task.taskId, { checks: passingChecks() });
     assert.equal(result.toolRuns[0].status, 'DENIED');

@@ -1,8 +1,8 @@
 import type {
-  Attempt, AttemptOutcome, ContextPack, FailureCategory,
+  Attempt, AttemptOutcome, ContextPack, ContextSection, FailureCategory,
   Task, ToolRequest, ToolResult, VerificationStatus
 } from '../domain/types.js';
-import { nowIso } from '../domain/id.js';
+import { nowIso, newId } from '../domain/id.js';
 import type { Database } from '../persistence/database.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { CheckpointRepository } from '../persistence/checkpoint-repository.js';
@@ -13,6 +13,7 @@ import type { SessionRepository } from '../persistence/session-repository.js';
 import type { EventStore } from '../events/event-store.js';
 import { BackendError, type AgentBackend, type AgentResponse } from '../backends/agent-backend.js';
 import type { ContextEngine } from '../context/context-engine.js';
+import { estimateTokens } from '../context/context-engine.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 import type { VerificationEngine, VerifyInput } from '../verification/verification-engine.js';
 import { decideRecovery, type RecoveryOutcome } from '../recovery/recovery-engine.js';
@@ -200,21 +201,58 @@ export class RuntimeOrchestrator {
     }) ?? null;
 
     try {
-      const contextSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'build_context', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
-      const context = this.buildContext(tasks.get(taskId)!, attempt.attemptId, config.backend.model);
-      if (contextSpan) this.deps.tracer!.endSpan(contextSpan.spanId, 'OK', { sections: context.sections.length });
-
-      const backendSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'backend_request', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
       await this.ensureBackendReady(this.backend);
-      response = await this.backend.send({
-        task_id: taskId,
-        attempt_id: attempt.attemptId,
-        context,
-        response_mode: 'TEXT'
-      });
-      if (backendSpan) this.deps.tracer!.endSpan(backendSpan.spanId, 'OK');
-      responseText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content ?? '');
-      toolResults = this.runRequestedTools(task, attempt, response);
+
+      // The tool loop (spec 02 §6, 14 §2-§5). A model turn that requests a tool is
+      // not an answer: the observation is fed back as context and the backend is
+      // asked again, until it commits to a FINAL response or the iteration bound is
+      // reached. Bounding the loop is what stops a model that never concludes from
+      // running forever; a bound-exhausted attempt has no final answer to verify.
+      const observations: ContextSection[] = [];
+      let iterations = 0;
+      while (true) {
+        const contextSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'build_context', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
+        const context = this.buildContext(tasks.get(taskId)!, attempt.attemptId, config.backend.model, observations);
+        if (contextSpan) this.deps.tracer!.endSpan(contextSpan.spanId, 'OK', { sections: context.sections.length });
+
+        const backendSpan = attemptSpan ? this.deps.tracer!.startSpan({ name: 'backend_request', traceId: attemptSpan.traceId, parentSpanId: attemptSpan.spanId }) : null;
+        const turn = await this.backend.send({
+          task_id: taskId,
+          attempt_id: attempt.attemptId,
+          context,
+          response_mode: 'TEXT'
+        });
+        if (backendSpan) this.deps.tracer!.endSpan(backendSpan.spanId, 'OK');
+        response = turn;
+
+        if (turn.type !== 'TOOL_REQUEST') {
+          responseText = typeof turn.content === 'string' ? turn.content : JSON.stringify(turn.content ?? '');
+          break;
+        }
+
+        const produced = this.runRequestedTools(task, attempt, turn);
+        toolResults = [...toolResults, ...produced.map(p => p.result)];
+        if (produced.length === 0) {
+          // A TOOL_REQUEST the runtime cannot even parse is not progress. Stopping
+          // here reports a failure rather than re-asking the same malformed request.
+          failureCategory = 'MODEL_FAILURE';
+          events.append({ projectId: task.projectId, taskId, attemptId: attempt.attemptId, type: 'ToolLoopAborted', source: 'RUNTIME', payload: { reason: 'malformed tool request' } });
+          break;
+        }
+        for (const run of produced) observations.push(toolObservationSection(run.toolName, run.result));
+
+        iterations += 1;
+        if (iterations >= config.tools.maxToolIterations) {
+          failureCategory = 'MODEL_FAILURE';
+          responseText = '';
+          events.append({
+            projectId: task.projectId, taskId, attemptId: attempt.attemptId, type: 'ToolLoopExhausted',
+            source: 'RUNTIME', payload: { iterations, maxIterations: config.tools.maxToolIterations }
+          });
+          this.deps.logger?.warn('TOOL', 'tool loop bound reached without a final response', { iterations }, { task_id: taskId, attempt_id: attempt.attemptId });
+          break;
+        }
+      }
     } catch (error) {
       failureCategory = classify(error);
       if (attemptSpan) this.deps.tracer!.endSpan(attemptSpan.spanId, 'ERROR', { category: failureCategory });
@@ -342,7 +380,7 @@ export class RuntimeOrchestrator {
     return { checkpointId: checkpoint?.checkpointId ?? null, reconciledToolRuns: reconciled, state: this.deps.tasks.get(taskId)!.state, config };
   }
 
-  private buildContext(task: Task, attemptId: string, model: string): ContextPack {
+  private buildContext(task: Task, attemptId: string, model: string, toolObservations: ContextSection[] = []): ContextPack {
     const gitState = new GitInspector(this.deps.config.workspaceRoot).state();
     // Retrieval integration (spec 04 §12, 12 §13): memory + repository results become
     // prioritised context sections. Retrieval is advisory; it cannot alter policy.
@@ -350,7 +388,10 @@ export class RuntimeOrchestrator {
       projectId: task.projectId,
       queryText: `${task.title} ${task.description}`.trim()
     }) ?? [];
-    const pack = this.deps.contextEngine.build({ task, attemptId, model, gitState, observations });
+    // Tool observations from earlier turns in this same attempt are placed after
+    // retrieved context: they are the runtime's account of what a tool actually did,
+    // not something the model asserted (spec 02 §6, 14 §2 step 11).
+    const pack = this.deps.contextEngine.build({ task, attemptId, model, gitState, observations: [...observations, ...toolObservations] });
     this.deps.db.transaction(() => {
       this.deps.contextSnapshots.create({
         taskId: task.taskId, attemptId, model, tokenCount: pack.sections.reduce((sum, s) => sum + s.tokenCost, 0),
@@ -360,7 +401,7 @@ export class RuntimeOrchestrator {
     return pack;
   }
 
-  private runRequestedTools(task: Task, attempt: Attempt, response: AgentResponse): ToolResult[] {
+  private runRequestedTools(task: Task, attempt: Attempt, response: AgentResponse): { toolName: string; result: ToolResult }[] {
     if (response.type !== 'TOOL_REQUEST') return [];
     const raw = response.content as Partial<ToolRequest> | undefined;
     if (!raw || typeof raw.tool !== 'string') return [];
@@ -368,7 +409,7 @@ export class RuntimeOrchestrator {
       requestId: raw.requestId ?? response.request_id, taskId: task.taskId, attemptId: attempt.attemptId,
       tool: raw.tool, version: raw.version ?? '1.0.0', arguments: (raw.arguments ?? {}) as Record<string, unknown>, timestamp: nowIso()
     };
-    return [this.deps.toolEngine.execute(request)];
+    return [{ toolName: request.tool, result: this.deps.toolEngine.execute(request) }];
   }
 
   private transitionTo(taskId: string, state: Task['state']): Task['state'] {
@@ -406,6 +447,19 @@ export class RuntimeOrchestrator {
     const { networkAccess, allowProcessExecution, allowNetworkAccess, grantedCapabilities, allowedCommands, policyVersion } = this.deps.config;
     return { networkAccess, allowProcessExecution, allowNetworkAccess, grantedCapabilities, allowedCommands, policyVersion };
   }
+}
+
+// A persisted tool result becomes the OBSERVATION section for the next model turn.
+// The observation states what the runtime executed and what came back, so the model
+// reasons over runtime evidence rather than its own recollection of the request.
+function toolObservationSection(toolName: string, run: ToolResult): ContextSection {
+  const output = run.output ?? run.error ?? '';
+  const content = `tool=${toolName} status=${run.status}\n${output}`;
+  return {
+    id: newId('section'), type: 'OBSERVATION', content, source: toolName,
+    priority: 1, tokenCost: estimateTokens(content), relevance: 1,
+    timestamp: nowIso(), provenance: `tool:${run.toolRunId}`
+  };
 }
 
 function classify(error: unknown): FailureCategory {

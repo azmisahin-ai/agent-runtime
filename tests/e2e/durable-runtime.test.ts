@@ -8,11 +8,18 @@ import type { AgentBackend, AgentEvent, AgentRequest, AgentResponse, BackendCapa
 
 class FakeBackend implements AgentBackend {
   readonly id = 'fake';
-  constructor(private readonly behavior: { response?: AgentResponse; fail?: Error }) {}
+  private sent = 0;
+  constructor(private readonly behavior: { response?: AgentResponse; responses?: AgentResponse[]; fail?: Error }) {}
   async initialize(): Promise<void> {}
   async start(_request: StartRequest): Promise<ExecutionHandle> { return { session_id: 'session_fake', external_session_id: null }; }
   async send(_request: AgentRequest): Promise<AgentResponse> {
     if (this.behavior.fail) throw this.behavior.fail;
+    const sequence = this.behavior.responses;
+    if (sequence && sequence.length > 0) {
+      const response = sequence[Math.min(this.sent, sequence.length - 1)];
+      this.sent += 1;
+      return response;
+    }
     return this.behavior.response ?? { request_id: 'req_1', type: 'FINAL', content: 'done' };
   }
   async *stream(_request: AgentRequest): AsyncIterable<AgentEvent> { yield { type: 'DONE' }; }
@@ -80,7 +87,10 @@ test('write_file is denied by default and succeeds only when explicitly granted'
   const denied = fixture();
   try {
     denied.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'write_file', version: '1.0.0', arguments: { path: 'out.txt', content: 'hello' } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'write_file', version: '1.0.0', arguments: { path: 'out.txt', content: 'hello' } } },
+        { request_id: 'r2', type: 'FINAL', content: 'wrote out.txt' }
+      ]
     }), 'fake');
     const result = await denied.runtime.orchestrator.run(denied.task.taskId, { checks: passing() });
     assert.equal(result.toolRuns[0].status, 'DENIED');
@@ -90,7 +100,10 @@ test('write_file is denied by default and succeeds only when explicitly granted'
   const granted = fixture({ AGENT_RUNTIME_GRANTED_CAPABILITIES: 'filesystem_write' });
   try {
     granted.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'write_file', version: '1.0.0', arguments: { path: 'out.txt', content: 'hello' } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'write_file', version: '1.0.0', arguments: { path: 'out.txt', content: 'hello' } } },
+        { request_id: 'r2', type: 'FINAL', content: 'wrote out.txt' }
+      ]
     }), 'fake');
     const result = await granted.runtime.orchestrator.run(granted.task.taskId, { checks: passing() });
     assert.equal(result.toolRuns[0].status, 'SUCCEEDED');
@@ -102,7 +115,10 @@ test('terminal.exec runs arbitrary commands only after explicit allowlisting', a
   const denied = fixture();
   try {
     denied.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'terminal.exec', version: '1.0.0', arguments: { argv: ['node', '--version'] } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'terminal.exec', version: '1.0.0', arguments: { argv: ['node', '--version'] } } },
+        { request_id: 'r2', type: 'FINAL', content: 'checked the runtime' }
+      ]
     }), 'fake');
     const result = await denied.runtime.orchestrator.run(denied.task.taskId, { checks: passing() });
     assert.equal(result.toolRuns[0].status, 'DENIED');
@@ -111,7 +127,10 @@ test('terminal.exec runs arbitrary commands only after explicit allowlisting', a
   const granted = fixture({ AGENT_RUNTIME_ALLOW_PROCESS: 'true', AGENT_RUNTIME_ALLOWED_COMMANDS: 'node' });
   try {
     granted.runtime.orchestrator.setBackend(new FakeBackend({
-      response: { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'terminal.exec', version: '1.0.0', arguments: { argv: ['node', '--version'] } } }
+      responses: [
+        { request_id: 'r1', type: 'TOOL_REQUEST', content: { requestId: 'r1', tool: 'terminal.exec', version: '1.0.0', arguments: { argv: ['node', '--version'] } } },
+        { request_id: 'r2', type: 'FINAL', content: 'checked the runtime' }
+      ]
     }), 'fake');
     const result = await granted.runtime.orchestrator.run(granted.task.taskId, { checks: passing() });
     assert.equal(result.toolRuns[0].status, 'SUCCEEDED');

@@ -21,7 +21,7 @@ export interface RuntimeConfig {
   workspaceRoot: string;
   backend: { baseUrl: string; model: string; requestTimeoutMs: number };
   context: { modelContextLimit: number; reservedOutputTokens: number; toolSchemaTokens: number; safetyMarginTokens: number };
-  tools: { maxOutputBytes: number; commandTimeoutMs: number };
+  tools: { maxOutputBytes: number; commandTimeoutMs: number; maxToolIterations: number };
   // Backend selection (spec 05 §7): 'ollama' is the default model server; 'cli'
   // launches a subordinate external CLI agent through the sandbox.
   backendKind: 'ollama' | 'cli';
@@ -113,6 +113,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (!LOG_LEVELS.includes(level)) throw new Error(`Invalid log level: ${level}`);
   const attempts = Number(env.AGENT_RUNTIME_MAX_RECOVERY_ATTEMPTS ?? '3');
   if (!Number.isInteger(attempts) || attempts < 0 || attempts > 20) throw new Error('Invalid max recovery attempts');
+  // The tool loop is bounded: an agent that never emits FINAL must not spin forever
+  // (spec 14 §3 step 11). An operator can raise the bound but not remove it.
+  const toolIterations = Number(env.AGENT_RUNTIME_MAX_TOOL_ITERATIONS ?? '10');
+  if (!Number.isInteger(toolIterations) || toolIterations < 1 || toolIterations > 100) throw new Error('Invalid max tool iterations');
   const allowNetwork = env.AGENT_RUNTIME_ALLOW_NETWORK === 'true';
   const allowProcess = env.AGENT_RUNTIME_ALLOW_PROCESS === 'true';
   return {
@@ -133,7 +137,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       toolSchemaTokens: Number(env.AGENT_RUNTIME_TOOL_SCHEMA_TOKENS ?? '0'),
       safetyMarginTokens: Number(env.AGENT_RUNTIME_CONTEXT_SAFETY ?? '1024')
     },
-    tools: { maxOutputBytes: Number(env.AGENT_RUNTIME_MAX_OUTPUT_BYTES ?? '262144'), commandTimeoutMs: Number(env.AGENT_RUNTIME_COMMAND_TIMEOUT_MS ?? '30000') },
+    tools: { maxOutputBytes: Number(env.AGENT_RUNTIME_MAX_OUTPUT_BYTES ?? '262144'), commandTimeoutMs: Number(env.AGENT_RUNTIME_COMMAND_TIMEOUT_MS ?? '30000'), maxToolIterations: toolIterations },
     backendKind: (env.AGENT_RUNTIME_BACKEND ?? 'ollama') === 'cli' ? 'cli' : 'ollama',
     cli: {
       // A CLI agent is an explicit operator choice; there is no default binary.
