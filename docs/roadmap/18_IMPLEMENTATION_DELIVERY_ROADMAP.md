@@ -44,7 +44,7 @@ Sandboxing, policy engine, secret handling, prompt-injection defenses, persisten
 
 All core subsystems implemented, integrated and covered by unit/integration/adversarial/recovery/e2e tests. Documentation, status and traceability agree with actual code.
 
-**Current repository:** V0.1 release candidate is assembled. All M0–M5 subsystems are implemented and the full suite passes (183/183). `AGENTS.md`, `README.md`, `STATUS.md`, `TRACEABILITY_MATRIX.md` and this roadmap now agree with the code. The candidate is honestly partial where the environment prevents proof or work is specified but unbuilt: a live-model benchmark run (Ollama is not installed here; the adapter is verified against an in-process fake server), kernel-enforced OS isolation beyond the in-process sandbox, and an external-agent transport adapter (the trust boundary is enforced, but no ACP/CLI/native agent is launched yet; spec 05 §8). See the Known gaps table in docs/TRACEABILITY_MATRIX.md.
+**Current repository:** V0.1 release candidate is assembled. All M0–M5 subsystems are implemented and the full suite passes (198/198). `AGENTS.md`, `README.md`, `STATUS.md`, `TRACEABILITY_MATRIX.md` and this roadmap agree with the code. A live-model benchmark has now run against a real Ollama server under per-task intent checks (see `docs/BENCHMARK.md`). The candidate is honestly partial where work is specified but unbuilt: kernel-enforced OS isolation beyond the in-process sandbox, and an ACP/native-agent transport adapter (the CLI transport and its trust boundary are implemented and launched by the benchmark, but no ACP or native agent is; spec 05 §8). See the Known gaps table in docs/TRACEABILITY_MATRIX.md.
 
 ## Development order
 
