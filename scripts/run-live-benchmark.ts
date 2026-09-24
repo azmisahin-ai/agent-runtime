@@ -13,7 +13,7 @@ import { checksForSuiteTask } from '../src/evaluation/suite-checks.js';
 // workspace cannot be scored as SUCCESS. This is a measurement harness, not a
 // scoring shortcut.
 
-interface Args { model: string; baseUrl: string; outDir: string; limit: number | null }
+interface Args { model: string; baseUrl: string; outDir: string; limit: number | null; backend: 'ollama' | 'cli'; cliCommand: string | null }
 
 function parseArgs(argv: string[]): Args {
   const get = (flag: string, fallback: string): string => {
@@ -21,11 +21,15 @@ function parseArgs(argv: string[]): Args {
     return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
   };
   const limit = get('--limit', '');
+  const backend = get('--backend', 'ollama') === 'cli' ? 'cli' as const : 'ollama' as const;
+  const cliCommand = get('--cli-command', '');
   return {
     model: get('--model', 'qwen2.5-coder:1.5b'),
     baseUrl: get('--base-url', 'http://127.0.0.1:11434'),
     outDir: get('--out', join(tmpdir(), 'agent-runtime-benchmark')),
-    limit: limit ? Number(limit) : null
+    limit: limit ? Number(limit) : null,
+    backend,
+    cliCommand: cliCommand.length > 0 ? cliCommand : null
   };
 }
 
@@ -72,7 +76,14 @@ async function main(): Promise<void> {
   mkdirSync(workspace, { recursive: true });
   seedWorkspace(workspace);
 
-  const runtime = bootstrap({
+  const runtime = bootstrap(args.backend === 'cli' ? {
+    AGENT_RUNTIME_DB_PATH: join(root, 'runtime.db'),
+    AGENT_RUNTIME_WORKSPACE: workspace,
+    AGENT_RUNTIME_BACKEND: 'cli',
+    AGENT_RUNTIME_CLI_COMMAND: args.cliCommand ?? '',
+    AGENT_RUNTIME_ALLOW_PROCESS: 'true',
+    AGENT_RUNTIME_CONTEXT_LIMIT: '4096'
+  } : {
     AGENT_RUNTIME_DB_PATH: join(root, 'runtime.db'),
     AGENT_RUNTIME_WORKSPACE: workspace,
     AGENT_RUNTIME_OLLAMA_URL: args.baseUrl,
@@ -88,7 +99,7 @@ async function main(): Promise<void> {
     // Failure is reported through health below rather than thrown here.
   }
   const health = await runtime.backend.health();
-  console.log(JSON.stringify({ status: 'BACKEND_HEALTH', model: args.model, base_url: args.baseUrl, health }, null, 2));
+  console.log(JSON.stringify({ status: 'BACKEND_HEALTH', backend: args.backend, model: args.model, base_url: args.baseUrl, health }, null, 2));
   if (health !== 'HEALTHY') {
     console.error('Model server is not healthy; refusing to fabricate a benchmark run.');
     runtime.db.close();
@@ -114,9 +125,9 @@ async function main(): Promise<void> {
   const suite = args.limit ? { ...INITIAL_SUITE, tasks: INITIAL_SUITE.tasks.slice(0, args.limit) } : INITIAL_SUITE;
   const startedAt = Date.now();
   const result = await runtime.evaluationRunner.runSuite(suite, executor, {
-    backendId: 'ollama',
-    provider: 'ollama',
-    model: args.model,
+    backendId: args.backend,
+    provider: args.backend,
+    model: args.backend === 'cli' ? (args.cliCommand ?? 'cli') : args.model,
     runtimeVersion: '0.1.0-dev',
     contextConfig: { modelContextLimit: 4096 },
     memorySnapshot: {},

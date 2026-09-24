@@ -12,7 +12,22 @@ node dist/scripts/run-live-benchmark.js --model qwen2.5-coder:1.5b
 ```
 
 Options: `--model`, `--base-url` (default `http://127.0.0.1:11434`), `--out`
-(default `$TMPDIR/agent-runtime-benchmark`), `--limit N`.
+(default `$TMPDIR/agent-runtime-benchmark`), `--limit N`, `--backend cli`,
+`--cli-command <path>`.
+
+With `--backend cli` the harness attaches a subordinate external agent through the
+CLI transport (spec 05 §7) and launches it only through the process sandbox. That is
+the transport that can actually mutate a workspace:
+
+```bash
+node dist/scripts/run-live-benchmark.js --backend cli \
+  --cli-command "$PWD/scripts/fixtures/repairing-agent.sh" --model repairing-agent
+```
+
+`scripts/fixtures/repairing-agent.sh` is a reference agent used as the harness's
+positive control: it repairs the seeded defects and states what it did, and it scores
+20/20. It exists to prove every check can PASS when the work is actually done, which
+is the counterpart to the Ollama runs where the same checks FAIL a prose claim.
 
 The harness refuses to run when the model server is not healthy, so a broken
 environment cannot be reported as a benchmark result.
@@ -81,6 +96,23 @@ and never edits the file, so the file-backed checks correctly fail. This is the
 expected and honest result, not a harness defect. The claim-only categories
 (TEST_FIX, FEATURE) pass when the model's answer actually describes the repair or the
 added surface; the analysis tasks pass when the answer cites a real artifact.
+
+### CLI-backend control run — 2026-09-24
+
+The same harness and the same checks, with the subordinate agent in
+`scripts/fixtures/repairing-agent.sh` attached through the CLI transport:
+
+| Field | Value |
+| --- | --- |
+| Run count | 20 (5 per category) |
+| Wall clock | 1.9 s |
+| `success_rate` | 1.0 (20/20) |
+| Failure categories | `NONE` × 20 |
+
+This is the positive control for the two runs above: an agent that actually repairs
+the files and states what it did scores 20/20, while a text-only model that only
+describes the work scores 11/20 and fails every file-backed check. The gap between
+the two numbers is the harness doing its job, not a scoring artifact.
 
 ### Earlier mechanics run — 2026-09-23
 
