@@ -59,6 +59,24 @@ npm run check
 
 If a command cannot be run because dependencies/environment are missing, report that fact rather than fabricating a result.
 
+## Local runtime operations
+
+Start the runtime against a live model (default backend is Ollama):
+
+```bash
+npm run build
+AGENT_RUNTIME_API_TOKEN=dev AGENT_RUNTIME_API_PORT=12105 AGENT_RUNTIME_MODEL=qwen2.5-coder:1.5b node dist/src/main.js
+```
+
+The startup line prints `backend.health`; a backend that is not `HEALTHY` will fail
+every attempt with `BACKEND_UNAVAILABLE`. To run a subordinate external CLI agent
+instead, set `AGENT_RUNTIME_BACKEND=cli`, `AGENT_RUNTIME_CLI_COMMAND=<path>` and
+`AGENT_RUNTIME_ALLOW_PROCESS=true`. Startup then reports `backend.kind`.
+
+Run the 20-task live benchmark with `node dist/scripts/run-live-benchmark.js`; it
+refuses to run when the model server is unhealthy. See `docs/BENCHMARK.md` for what
+the numbers do and do not mean.
+
 ## Handoff
 
 Every milestone must leave the repository in a state where another agent can continue without private conversation history.
