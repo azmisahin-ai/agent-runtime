@@ -150,3 +150,46 @@ test('an answer naming no artifact fails the analysis check rather than scoring 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The CLI transport is the backend that actually mutates a workspace (spec 05 §7,
+// spec 14 §6). This proves the file-backed BUG_FIX check can PASS when the
+// subordinate agent really repairs the defect, closing the gap the text-only
+// Ollama backend cannot close. The agent is a real executable run through the real
+// ProcessSandbox; it edits the workspace file, then prints its claim.
+test('a CLI agent that repairs the file passes the file-backed bug-fix check', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-runtime-cli-bugfix-'));
+  const workspace = join(dir, 'workspace');
+  mkdirSync(workspace, { recursive: true });
+  seedWorkspace(workspace);
+  // An external agent: fix the off-by-one, then state what it did. argv[1] is the prompt.
+  const agent = join(dir, 'agent.sh');
+  writeFileSync(agent, [
+    '#!/bin/sh',
+    'printf \'function add(a, b) {\\n  return a + b;\\n}\\n\\nmodule.exports = { add };\\n\' > src/math.js',
+    'echo "fixed src/math.js: removed the off-by-one so add returns a + b"'
+  ].join('\n') + '\n');
+  chmodSync(agent, 0o755);
+
+  const runtime = bootstrap({
+    AGENT_RUNTIME_DB_PATH: join(dir, 'runtime.db'),
+    AGENT_RUNTIME_WORKSPACE: workspace,
+    AGENT_RUNTIME_BACKEND: 'cli',
+    AGENT_RUNTIME_CLI_COMMAND: agent,
+    AGENT_RUNTIME_ALLOW_PROCESS: 'true'
+  });
+
+  try {
+    await runtime.orchestrator.initializeBackend();
+    const executor = new RuntimeEvaluationExecutor(runtime, workspace, d => checksForSuiteTask(d, workspace));
+    const task = INITIAL_SUITE.tasks.find(t => t.taskPackId === 'bug-fix-off-by-one')!;
+    const result = await runtime.evaluationRunner.runSuite({ ...INITIAL_SUITE, tasks: [task] }, executor, {
+      backendId: 'cli', provider: 'cli', model: 'agent.sh', runtimeVersion: 'test',
+      contextConfig: {}, memorySnapshot: {}, toolConfig: {}, verificationConfig: {}
+    });
+    assert.equal(result.runs[0].run.verification, 'PASS');
+    assert.equal(result.aggregates.success_rate, 1);
+  } finally {
+    runtime.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
