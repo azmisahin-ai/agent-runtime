@@ -38,7 +38,10 @@
 | Process sandbox (single chokepoint, explicit env, bounded) | 15 | `src/security/process-sandbox.ts`, `src/tools/builtin-tools.ts` (`runCommand`), `src/runtime/bootstrap.ts` | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
 | Persistence-failure handling (durability precondition) | 13 | `src/security/persistence-guard.ts`, `src/runtime/orchestrator.ts` (`assertDurable`) | `tests/adversarial/m4-remainder.test.ts` | PASS (M4 remainder) |
 | Backend abstraction | 05 | `src/backends/agent-backend.ts` | `tests/integration/ollama-backend.test.ts`, `tests/e2e/vertical-slice.test.ts` | PASS (M1) |
-| Ollama adapter | 05, 07 | `src/backends/ollama-backend.ts` | `tests/integration/ollama-backend.test.ts` | PASS (M1) |
+| Ollama adapter | 05, 07 | `src/backends/ollama-backend.ts` | `tests/integration/ollama-backend.test.ts`, `tests/e2e/live-backend.test.ts` | PASS (M1) |
+| CLI-agent adapter (subordinate external agent via sandbox) | 05 §7-8, 15 §11 | `src/backends/cli-backend.ts`, `src/runtime/bootstrap.ts` (`buildBackend`), `src/config/config.ts` | `tests/adversarial/cli-backend.test.ts`, `tests/e2e/live-backend.test.ts` | PASS (M5 remainder) |
+| Backend initialization before first request | 05 §3 | `src/runtime/orchestrator.ts` (`initializeBackend`/`ensureBackendReady`), `src/main.ts` | `tests/e2e/live-backend.test.ts` | PASS |
+| Backend failure classified by structured code | 05 §9, 14 | `src/runtime/orchestrator.ts` (`classify`) | `tests/e2e/live-backend.test.ts` | PASS |
 | Verification independent of claims | 11 | `src/verification/verification-engine.ts` | `tests/unit/verification.test.ts`, `tests/e2e/vertical-slice.test.ts` | PASS (M1) |
 | Recovery creates new attempts | 11, 13 | `src/recovery/recovery-engine.ts`, orchestrator | `tests/recovery/recovery.test.ts`, e2e retry test | PASS (M1) |
 | Config snapshot immutability | 16 | `src/persistence/config-snapshot-repository.ts` | checkpoint/config test | PASS (M1) |
@@ -73,8 +76,8 @@ here rather than given a PASS row so the matrix cannot be read as complete cover
 
 | Requirement | Specification | State |
 |---|---|---|
-| External-agent transport adapter (an actual ACP/CLI/native agent driven end to end) | 05 §8 | PLANNED — the boundary is enforced and capability flags exist on the backend contract, but no external agent is launched in V0.1 |
-| Live-model benchmark execution | 06 | PARTIAL — the harness runs through the real orchestrator, but no live model is available in the build environment (Ollama absent); verified against an in-process fake server |
+| ACP / native-agent transport adapters | 05 §8 | PLANNED — the CLI transport is implemented; a real ACP stdio JSON-RPC session transport and native-agent adapters are not |
+| Live-model benchmark execution | 06 | PARTIAL — the 20-task suite runs against a live Ollama model via `scripts/run-live-benchmark.ts` (see `docs/BENCHMARK.md`); the run measures runtime mechanics and latency, not per-task task correctness, which needs per-task task workspaces |
 
 ## Status definitions
 

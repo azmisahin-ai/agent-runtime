@@ -3,6 +3,19 @@ import { ApiServer } from './api/server.js';
 
 // The runtime owns continuity; the API is a transport over persisted state (spec 09 §8).
 const runtime = bootstrap();
+
+// Initialize the backend before accepting work so the operator sees real backend
+// health at startup. An unreachable model server does not stop the runtime: the
+// API stays up and each attempt fails honestly as BACKEND_UNAVAILABLE.
+let backendHealth: string;
+try {
+  await runtime.orchestrator.initializeBackend();
+  backendHealth = await runtime.backend.health();
+} catch (error) {
+  backendHealth = 'UNAVAILABLE';
+  console.error(JSON.stringify({ status: 'BACKEND_UNREACHABLE', base_url: runtime.config.backend.baseUrl, error: error instanceof Error ? error.message : String(error) }));
+}
+
 const server = new ApiServer(runtime.api, {
   port: runtime.config.api.port,
   host: runtime.config.api.host,
@@ -15,7 +28,10 @@ console.log(JSON.stringify({
   db_path: runtime.config.dbPath,
   api_base: `http://${host}:${port}/api/v1`,
   mutations_enabled: runtime.config.api.token !== null,
-  network_policy: runtime.config.networkAccess
+  network_policy: runtime.config.networkAccess,
+  backend: runtime.config.backendKind === 'cli'
+    ? { kind: 'cli', command: runtime.config.cli.command, health: backendHealth }
+    : { kind: 'ollama', model: runtime.config.backend.model, base_url: runtime.config.backend.baseUrl, health: backendHealth }
 }, null, 2));
 
 const shutdown = async (signal: string) => {

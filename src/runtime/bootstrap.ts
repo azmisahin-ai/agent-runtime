@@ -29,6 +29,8 @@ import { StructuredLogger, MetricsRegistry } from '../observability/logger.js';
 import { Tracer } from '../observability/tracer.js';
 import { GitInspector } from '../git/git-inspector.js';
 import { OllamaBackend } from '../backends/ollama-backend.js';
+import { CliBackend } from '../backends/cli-backend.js';
+import type { AgentBackend } from '../backends/agent-backend.js';
 import { RuntimeOrchestrator } from './orchestrator.js';
 import { WorkspaceLock } from './workspace-lock.js';
 import { SecurityAudit } from '../security/security-audit.js';
@@ -76,7 +78,7 @@ export interface Runtime {
   metrics: MetricsRegistry;
   tracer: Tracer;
   orchestrator: RuntimeOrchestrator;
-  backend: OllamaBackend;
+  backend: AgentBackend;
   securityAudit: SecurityAudit;
   destructiveOps: DestructiveOperationPolicy;
   sandbox: ProcessSandbox;
@@ -90,6 +92,27 @@ export interface Runtime {
   failureClassifier: FailureClassifier;
   integrityChecker: IntegrityChecker;
   artifactStore: ArtifactStore;
+}
+
+// Backend selection lives in one place (spec 05 §7). Ollama is the default model
+// server; the CLI adapter lets an operator attach a subordinate external agent,
+// which is still launched only through the sandbox.
+function buildBackend(config: RuntimeConfig, sandbox: ProcessSandbox): AgentBackend {
+  if (config.backendKind === 'cli') {
+    if (!config.cli.command) throw new Error('AGENT_RUNTIME_BACKEND=cli requires AGENT_RUNTIME_CLI_COMMAND');
+    return new CliBackend({
+      command: config.cli.command,
+      args: config.cli.args,
+      sandbox,
+      workspaceRoot: config.workspaceRoot,
+      requestTimeoutMs: config.backend.requestTimeoutMs
+    });
+  }
+  return new OllamaBackend({
+    baseUrl: config.backend.baseUrl,
+    model: config.backend.model,
+    requestTimeoutMs: config.backend.requestTimeoutMs
+  });
 }
 
 export function bootstrap(env: Record<string, string | undefined> = process.env): Runtime {
@@ -163,11 +186,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
   const evaluationRecorder = new EvaluationRecorder(db, evaluations, events);
   const contextRetriever = new ContextRetriever({ memoryEngine, repositorySearch });
 
-  const backend = new OllamaBackend({
-    baseUrl: config.backend.baseUrl,
-    model: config.backend.model,
-    requestTimeoutMs: config.backend.requestTimeoutMs
-  });
+  const backend = buildBackend(config, sandbox);
 
   const securityAudit = new SecurityAudit(db);
   const persistenceGuard = new PersistenceGuard(db);
@@ -185,7 +204,7 @@ export function bootstrap(env: Record<string, string | undefined> = process.env)
     db, config, tasks, checkpoints, contextSnapshots, configSnapshots, toolRuns, sessions,
     events, contextEngine, toolEngine, verificationEngine, evaluationRecorder,
     memoryEngine, contextRetriever, logger, metrics, tracer, workspaceLock, persistenceGuard
-  }, backend);
+  }, backend, config.backendKind);
 
   const runtime: Runtime = {
     config, db, projects, tasks, events, taskService, checkpoints, configSnapshots,

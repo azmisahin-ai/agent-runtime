@@ -1,7 +1,7 @@
 # Agent Runtime — Status
 
 **Last repository checkpoint:** V0.1 release candidate assembled (M0–M5 implemented and verified; docs/status/traceability aligned with code)
-**Current milestone:** V0.1 release candidate / live-model benchmark execution pending (requires Ollama)
+**Current milestone:** V0.1 release candidate — live-model benchmark executed; CLI-agent transport added
 
 ## Verified implementation
 
@@ -13,7 +13,7 @@
 - Append-only event store
 - Transactional TaskService and repositories
 - Configuration loader (default-deny network and process execution)
-- Backend abstraction (`AgentBackend`) and baseline Ollama adapter
+- Backend abstraction (`AgentBackend`) and baseline Ollama adapter, plus a subordinate CLI-agent adapter (`CliBackend`) launched only through the sandbox
 - Tool Engine: schema validation, default-deny policy, path guard, built-ins (read/list/search/git)
 - Complete Tool Engine: `write_file` (policy-gated, path-guarded) and `terminal.exec` (structured argv, command allowlist, timeout, bounded output, secret redaction)
 - Context Engine with budgeting and untrusted-data framing
@@ -53,15 +53,15 @@
 - External-agent trust boundary (spec 05 §8, 15 §11): external capability is the intersection of operator grant and agent declaration, so nothing external can silently expand policy; every tool is documented RUNTIME- or EXTERNAL-owned, and an external session id maps to a Task/Attempt without becoming authority
 - Traces (spec 17 §7): best-effort parent/child spans for an attempt (`attempt`, `build_context`, `backend_request`) with secret/classification-sanitized attributes; a failing exporter degrades tracing only and canonical state stays in the event store
 - Data classification (spec 15 §12): PUBLIC/PROJECT/SENSITIVE/SECRET derived from content (a declared label cannot downgrade a secret) and enforced per channel — SECRET never enters persistence/context/log/artifact, SENSITIVE never enters durable memory/log/artifact but may serve the current context
-- M0–M5 unit/integration/adversarial/recovery/e2e tests (183 passing)
+- M0–M5 unit/integration/adversarial/recovery/e2e tests (195 passing)
 - Architecture specifications 01–17, roadmap 18, traceability matrix, handoff instructions
 
 ## Not yet implemented
 
-- Live-model benchmark execution: the M5 harness runs through the real orchestrator, but a live Ollama model is not available in this environment, so suite runs are exercised with a scripted backend
+- Live-model benchmark execution: the 20-task initial suite has been run against a live Ollama model (`qwen2.5-coder:1.5b`) via `scripts/run-live-benchmark.ts`; this is a mechanics/latency measurement (each task opens a real attempt and closes it with a terminal observation) and does not score task work, which would need per-task task workspaces (see `docs/BENCHMARK.md`)
 - Stronger OS-level isolation than the in-process sandbox (e.g. containers, seccomp/namespaces); the current sandbox controls environment, cwd, timeout and output but is not a kernel-enforced jail
-- Multi-provider backends beyond Ollama
-- External-agent transport adapter: the trust boundary (ownership, capability ceiling, session mapping) is implemented, but no actual ACP/CLI/native agent is launched in V0.1
+- Multi-provider backends beyond Ollama and CLI
+- External-agent transport adapter: the trust boundary (ownership, capability ceiling, session mapping) is implemented, and a subordinate CLI agent can now be attached and run end to end (`CliBackend`, `AGENT_RUNTIME_BACKEND=cli`). A real ACP session transport (stdio JSON-RPC) and native-agent adapters remain unimplemented
 
 ## Next exact work
 

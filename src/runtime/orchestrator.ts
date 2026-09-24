@@ -11,7 +11,7 @@ import type { ConfigSnapshotRepository } from '../persistence/config-snapshot-re
 import type { ToolRunRepository } from '../persistence/tool-run-repository.js';
 import type { SessionRepository } from '../persistence/session-repository.js';
 import type { EventStore } from '../events/event-store.js';
-import type { AgentBackend, AgentResponse } from '../backends/agent-backend.js';
+import { BackendError, type AgentBackend, type AgentResponse } from '../backends/agent-backend.js';
 import type { ContextEngine } from '../context/context-engine.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 import type { VerificationEngine, VerifyInput } from '../verification/verification-engine.js';
@@ -110,6 +110,13 @@ export class RuntimeOrchestrator {
     if (this.initializedBackends.has(backend)) return;
     await backend.initialize();
     this.initializedBackends.add(backend);
+  }
+
+  // Explicit startup initialization so hosts can surface backend health before
+  // accepting work. Failure is not fatal: the runtime stays up, reports health,
+  // and retries initialization before the first request.
+  async initializeBackend(): Promise<void> {
+    await this.ensureBackendReady(this.backend);
   }
 
   async run(taskId: string, verification: Omit<VerifyInput, 'taskId' | 'attemptId' | 'agentClaim'>, repositoryRevision: string | null = null): Promise<RunResult> {
@@ -383,7 +390,12 @@ export class RuntimeOrchestrator {
   }
 
   private backendId(): string { return this.currentBackendId; }
-  private providerName(): string { return 'ollama'; }
+  // The provider label must name the backend that actually ran, otherwise evaluation
+  // and attempt records attribute a CLI agent's result to Ollama (spec 06 §7).
+  private providerName(): string {
+    if (this.currentBackendId === 'cli') return 'cli';
+    return 'ollama';
+  }
 
   private effectiveConfig(): Record<string, unknown> {
     const { context, tools, maxRecoveryAttempts, profile, workspaceRoot } = this.deps.config;
@@ -397,11 +409,22 @@ export class RuntimeOrchestrator {
 }
 
 function classify(error: unknown): FailureCategory {
+  // A structured backend error already states its kind; trusting its code keeps a
+  // CLI timeout or an unreachable server from being flattened into UNKNOWN_FAILURE
+  // just because the message did not happen to contain a keyword.
+  if (error instanceof BackendError) {
+    switch (error.code) {
+      case 'BACKEND_TIMEOUT': return 'TIMEOUT';
+      case 'BACKEND_UNAVAILABLE': return 'BACKEND_FAILURE';
+      case 'BACKEND_CAPABILITY_UNSUPPORTED': return 'BACKEND_FAILURE';
+      default: return 'BACKEND_FAILURE';
+    }
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (/timeout|timed out|abort/i.test(message)) return 'TIMEOUT';
   if (/permission|denied|forbidden|EACCES/i.test(message)) return 'PERMISSION_FAILURE';
   if (/sqlite|persist|database|constraint/i.test(message)) return 'PERSISTENCE_FAILURE';
   if (/ENOENT|no such file|git|repo/i.test(message)) return 'REPOSITORY_FAILURE';
-  if (/ollama|backend|ECONNREFUSED|network/i.test(message)) return 'BACKEND_FAILURE';
+  if (/ollama|backend|ECONNREFUSED|network|CLI /i.test(message)) return 'BACKEND_FAILURE';
   return 'UNKNOWN_FAILURE';
 }

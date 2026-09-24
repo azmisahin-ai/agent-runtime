@@ -10,6 +10,10 @@ export interface RuntimeConfig {
   backend: { baseUrl: string; model: string; requestTimeoutMs: number };
   context: { modelContextLimit: number; reservedOutputTokens: number; toolSchemaTokens: number; safetyMarginTokens: number };
   tools: { maxOutputBytes: number; commandTimeoutMs: number };
+  // Backend selection (spec 05 §7): 'ollama' is the default model server; 'cli'
+  // launches a subordinate external CLI agent through the sandbox.
+  backendKind: 'ollama' | 'cli';
+  cli: { command: string | null; args: string[] };
   grantedCapabilities: ToolCapability[];
   allowProcessExecution: boolean;
   allowNetworkAccess: boolean;
@@ -75,6 +79,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       safetyMarginTokens: Number(env.AGENT_RUNTIME_CONTEXT_SAFETY ?? '1024')
     },
     tools: { maxOutputBytes: Number(env.AGENT_RUNTIME_MAX_OUTPUT_BYTES ?? '262144'), commandTimeoutMs: Number(env.AGENT_RUNTIME_COMMAND_TIMEOUT_MS ?? '30000') },
+    backendKind: (env.AGENT_RUNTIME_BACKEND ?? 'ollama') === 'cli' ? 'cli' : 'ollama',
+    cli: {
+      // A CLI agent is an explicit operator choice; there is no default binary.
+      command: env.AGENT_RUNTIME_CLI_COMMAND && env.AGENT_RUNTIME_CLI_COMMAND.length > 0 ? env.AGENT_RUNTIME_CLI_COMMAND : null,
+      args: (env.AGENT_RUNTIME_CLI_ARGS ?? '').split(' ').map(s => s.trim()).filter(Boolean)
+    },
     grantedCapabilities: parseCapabilities(env),
     allowProcessExecution: allowProcess,
     allowNetworkAccess: allowNetwork,
